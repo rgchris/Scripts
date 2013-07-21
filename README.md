@@ -1,4 +1,4 @@
 Scripts
 =======
 
-Miscellaneous Rebol Scripts
+Miscellaneous Rebol Scripts (for Rebol 3).
