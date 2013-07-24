@@ -10,7 +10,7 @@ REBOL [
 		http://www.colellachiara.com/soft/MD3/fsm.html
 	]
 	; Type: 'module
-	Root: http://reb4.me/md/
+	Root: %makedoc/
 	Exports: [
 		load-doc make-doc ; load-para make-para
 	]
@@ -45,7 +45,7 @@ import module [ ; Amend ##;
 
 	chars: complement nochar: charset " ^-^/^@^M"
 	ascii+: charset [#"^(20)" - #"^(7E)"]
-	wiki*: complement charset [#"^(00)" - #"^(1F)" {:*.<>} #"{" #"}"]
+	wiki*: complement charset [#"^(00)" - #"^(1F)" {:*.<>[]} #"{" #"}"]
 	name: union union lower digit charset "*!',()_-"
 	wordify-punct: charset "-_()!"
 
@@ -84,7 +84,7 @@ import module [ ; Amend ##;
 	word: [word1 0 25 word*]
 	number: [some digit]
 	integer: [opt #"-" number]
-	wiki: [some [wiki* | utf-8]]
+	wiki: [some [wiki* | ucs]]
 	ws*: white-space: [some ws]
 
 	amend: func [rule [block!]][
@@ -857,7 +857,27 @@ import module [ ; Make-Doc ##;
 		]
 	]
 
-	load-doc: use [document!][
+	load-doc: use [document! form-para][
+		form-para: func [para [string! block!]][
+			para: compose [(para)]
+		
+			join "" collect [
+				foreach part para [
+					case [
+						string? part [keep part]
+						integer? part [keep form to char! part]
+						switch part [
+							<quot> [keep to string! #{E2809C}]
+							</quot> [keep to string! #{E2809D}]
+							<apos> [keep to string! #{E28098}]
+							</apos> [keep to string! #{E28099}]
+						][]
+						char? part [keep part]
+					]
+				]
+			]
+		]
+
 		document!: context [
 			options: source: text: document: values: none
 			outline: func [/level depth [integer!] /local doc][
@@ -866,6 +886,11 @@ import module [ ; Make-Doc ##;
 					not find level style
 				]
 				doc
+			]
+			title: has [title][
+				if parse document [opt ['options skip] 'para set title block! to end][
+					form-para title
+				]
 			]
 			render: func [/custom options [block! object! none!]][
 				make-doc/custom self make self/options any [options []]
