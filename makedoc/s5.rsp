@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title><%== document/title %></title>
+<meta charset="utf-8"/>
+<!-- metadata -->
+<!-- configuration parameters -->
+<meta name="defaultView" content="slideshow" />
+<meta name="controlVis" content="hidden" />
+<!-- style sheet links -->
+<link rel="stylesheet" href="http://reb4.me/s/s5md.css" media="projection" id="slideProj" />
+<link rel="stylesheet" href="/s/s5/outline.css" media="screen" id="outlineStyle" />
+<link rel="stylesheet" href="/s/s5/print.css" media="print" id="slidePrint" />
+<link rel="stylesheet" href="/s/s5/opera.css" media="projection" id="operaFix" />
+<!-- S5 JS -->
+<script src="/s/s5/slides.js" type="text/javascript"></script>
+</head>
+<body>
+
+<div class="layout">
+	<div id="logo"><img src="http://reb4.me/x/forklogo-20130615-174319.png" alt="Rebol" width="120" height="100" title="Rebol" /></div>
+	<div id="controls"><!-- DO NOT EDIT --></div>
+	<div id="currentSlide"><!-- DO NOT EDIT --></div>
+	<div id="header"></div>
+	<div id="footer">
+		<h1><span>S5 Slides by Make Doc</span></h1>
+	</div>
+</div>
+
+<%= document/render %>
+
+</body>
+</html>
