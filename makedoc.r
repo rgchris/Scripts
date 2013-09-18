@@ -415,6 +415,13 @@ import module [ ; Make-Doc ##;
 ][
 	root: system/script/header/root
 
+	if all [
+		file? root
+		not find [#"/" #"~"] first root
+	][
+		root: join system/script/path root
+	]
+
 	load-next: func [string [string!] /local out][
 		out: transcode/next to binary! string
 		out/2: skip string subtract length? string length? to string! out/2
