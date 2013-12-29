@@ -181,7 +181,7 @@ get-video-id: func [spec [url!] /local id][
 			opt "player." "vimeo.com/" any [wordify "/"]
 			copy id 6 11 digit to end
 		]
-	][to issue! id]
+	][to issue! form id]
 ]
 
 emit-video: func [spec [block!] /youtube /vimeo /local video][
@@ -195,7 +195,7 @@ emit-video: func [spec [block!] /youtube /vimeo /local video][
 		video/id: join case [
 			youtube [https://youtube.com/embed/]
 			vimeo [http://player.vimeo.com/video/]
-		] sanitize video/id
+		] sanitize next mold video/id
 		emit [{<div class="tube">^/<iframe type="text/html" src="} video/id {"></iframe>^/</div>}]
 	][
 		raise ["Invalid Video Spec #" sanitize mold spec]
