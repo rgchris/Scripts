@@ -1,7 +1,7 @@
-REBOL [
+Rebol [
 	Title: "CSSR"
 	Purpose: "A Style Sheet Dialect that generates CSS"
-	Version: 0.1.3
+	Version: 0.1.4
 	Date: 17-Jun-2013
 	Author: "Christopher Ross-Gill"
 	Name: 'cssr
@@ -21,6 +21,7 @@ ruleset: context [
 
 	; Values that are zero or more
 	colors: copy []
+	lengths: copy []
 	; images: copy []
 	transitions: copy []
 	transformations: copy []
@@ -36,7 +37,7 @@ ruleset: context [
 		]
 	]
 
-	form-number: func [value [number!] unit [word! none!]][
+	form-number: func [value [number!] unit [word! string! none!]][
 		enspace case [
 			value = 0 ["0"]
 			unit [join value unit]
@@ -47,7 +48,8 @@ ruleset: context [
 	form-value: func [values /local value choices][
 		any [
 			switch value: take values [
-				em px deg [form-number take values value]
+				em px deg vw vh [form-number take values value]
+				pct [form-number take values "%"]
 				* [form-number take values none]
 				| [","]
 				radial [enspace ["radial-gradient(" remove form-values values ")"]]
@@ -100,7 +102,7 @@ ruleset: context [
 		]
 	]
 
-	form-property: func [property [word!] values [string! block!] /vendors][
+	form-property: func [property [word!] values [string! block!] /vendors /inline prefix][
 		if block? values [values: form-values values]
 		rejoin collect [
 			if any [vendors found? find [transition box-sizing transform-style transition-delay] property][
@@ -108,14 +110,22 @@ ruleset: context [
 					keep form-property to word! join prefix form property values
 				]
 			]
+			if prefix [insert next values prefix]
 			keep ["^/^-" property ":" values ";"]
 		]
 	]
 
 	render: has [value][
 		; sort/skip values 2
+		while [value: take lengths][
+			value: compose [(value)]
+			case [
+				not find values 'width [set 'width value]
+				not find values 'height [set 'height value]
+			]
+		]
 		while [value: take colors][
-			value: reduce [value]
+			value: compose [(value)]
 			case [
 				not find values 'color [set 'color value]
 				not find values 'background-color [set 'background-color value]
@@ -128,6 +138,15 @@ ruleset: context [
 					find [opacity] property [
 						if tail? next values [insert values '*]
 					]
+					all [
+						property = 'background-image
+						find [radial linear] values/1
+					][
+						foreach prefix [-webkit- -moz- -ms- -o-][
+							keep form-property/inline property copy values prefix
+						]
+					]
+					
 				]
 				switch/default property [][
 					keep form-property property values
@@ -153,7 +172,8 @@ ruleset: context [
 		make self [
 			values: copy []
 			colors: copy []
-			dimensions: copy []
+			lengths: copy []
+			; dimensions: copy []
 			; images: copy []
 			transitions: copy []
 			transformations: copy []
@@ -177,10 +197,12 @@ parser: context [
 	deg: ['deg number! | zero]
 	scalar: ['* number! | zero]
 	percent: ['pct number! | zero]
+	vh: ['vh number! | zero]
+	vw: ['vw number! | zero]
 	color: [tuple! | named-color]
 	time: [time!]
 	pair: [pair!]
-	binary: [path! binary!]
+	binary: [end skip] ; [path! binary!] ; omitted until considered safe
 	image: [binary | file! | url!]
 
 	; Optionals
@@ -197,13 +219,13 @@ parser: context [
 		| 'transform | 'font | 'indent | 'spacing
 	]
 	direction: ['x | 'y | 'z]
-	position-x: ['right | 'left]
-	position-y: ['top | 'bottom]
+	position-x: ['right | 'left | 'center]
+	position-y: ['top | 'bottom | 'middle]
 	position: [position-y | position-x]
 	positions: [position-y position-x | position-y | position-x]
 	repeats: ['repeat-x | 'repeat-y | 'repeat ['x | 'y] | 'no-repeat | 'no 'repeat]
 	font-name: [string! | 'sans-serif | 'serif | 'monospace]
-	length: [em | px | percent]
+	length: [em | px | percent | vh | vw]
 	angle: [deg]
 	number: [scalar | number!]
 	box-model: ['block | 'inline 'block | 'inline-block]
@@ -239,7 +261,7 @@ parser: context [
 	selector: use [
 		dot-word primary qualifier
 		form-element form-selectors
-		out selectors subselector mk ex
+		out selectors selector
 	][
 		dot-word: use [word continue][
 			; Matches only words that begin .something
@@ -323,11 +345,11 @@ parser: context [
 			]
 		]
 
-		subselector: [
+		selector: [
 			some primary any [
 				  'with some qualifier
 				| 'in some primary
-				| 'and subselector
+				| 'and selector
 			]
 		]
 
@@ -336,7 +358,7 @@ parser: context [
 			some primary any [
 				  'with some qualifier
 				| 'in some primary
-				| 'and subselector
+				| 'and selector
 			] capture
 			(repend rules [form-selectors captured current: ruleset/new])
 		]
@@ -347,6 +369,8 @@ parser: context [
 		  mark box-model capture (emits 'display)
 		| mark 'border-box capture (emits 'box-sizing)
 		| ['min 'height | 'min-height] mark length capture (emits 'min-height)
+		| ['min 'width | 'min-width] mark length capture (emits 'min-width)
+		| 'height mark length capture (emits 'height)
 		| 'margin [
 			mark [
 				  1 2 [length opt [length | 'auto]]
@@ -438,16 +462,21 @@ parser: context [
 		| mark 'pointer capture (emits 'cursor)
 		| ['canvas | 'background] any [
 			  mark color capture (emits 'background-color)
+			| mark [file! | url!] (emits 'background-image)
 			| mark positions capture (emits 'background-position)
 			| mark repeats capture (emits 'background-repeat)
+			| mark ['contain | 'cover] capture (emits 'background-size)
+			| mark pair capture (
+				captured: first captured
+				emit 'background-position reduce [
+					'pct to integer! captured/x
+					'pct to integer! captured/y
+				]
+			)
 		]
+
 		| mark [
-			  [file! | url!] capture (emits 'background-image) any [
-				  mark positions capture (emits 'background-position)
-				| mark repeats capture (emits 'background-repeat)
-			]
-		| mark [
-			| 'radial color color capture (
+			'radial color color capture (
 				insert at captured 3 '|
 			)
 			| 'linear angle color color capture (
@@ -465,10 +494,22 @@ parser: context [
 		; 	  mark positions capture (emits 'background-position)
 		; 	| mark repeats capture (emits 'background-repeat)
 		; ]
+		| mark image capture (emits 'background-image) any [
+			  mark positions capture (emits 'background-position)
+			| mark pair capture (
+				captured: first captured
+				emit 'background-position reduce [
+					'pct to integer! captured/x
+					'pct to integer! captured/y
+				]
+			)
+			| mark repeats capture (emits 'background-repeat)
+			| mark ['contain | 'cover] capture (emits 'background-size)
+		]
 
 		; Any Singleton Values
 		| mark [
-			  length capture (emits 'width)
+			  length capture (append/only current/lengths captured)
 			| some color capture (append current/colors captured)
 			| time capture (emits 'transition)
 			| pair capture (
@@ -538,7 +579,7 @@ parser: context [
 				keep rule/render
 				keep "^/"
 			]
-			keep "^//* CSSR Output End **/^/"
+			keep "^/^//* CSSR Output End **/^/"
 		]
 	]
 
@@ -555,12 +596,13 @@ parser: context [
 	]
 ]
 
-??: use [mark][[mark: (new-line/all copy/part mark 8 false)]]
+??: use [mark][[mark: (probe new-line/all copy/part mark 8 false)]]
 
-to-css: func [dialect [file! url! block!] /local out][
+to-css: func [dialect [file! url! string! block!] /local out][
 	case/all [
 		file? dialect [dialect: load dialect]
 		url? dialect [dialect: load dialect]
+		string? dialect [dialect: load dialect]
 		not block? dialect [make error! "No Dialect!"]
 	]
 
