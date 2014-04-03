@@ -1,7 +1,7 @@
 Rebol [
 	Title: "CSSR"
 	Purpose: "A Style Sheet Dialect that generates CSS"
-	Version: 0.1.4
+	Version: 0.1.5
 	Date: 17-Jun-2013
 	Author: "Christopher Ross-Gill"
 	Name: 'cssr
@@ -183,6 +183,8 @@ ruleset: context [
 ]
 
 parser: context [
+	google-fonts-base-url: http://fonts.googleapis.com/css?family=
+
 	; Storage
 	reset?: false
 	rules: []
@@ -527,8 +529,19 @@ parser: context [
 	dialect: [()
 		opt ['css/reset (reset?: true)]
 		opt [
-			'google 'fonts set value url!
-			(append google-fonts value)
+			'google 'fonts [
+				some [
+					copy value [string! any issue!]
+					(append/only google-fonts value)
+					|
+					set value url! (
+						all [
+							value: find/match value google-fonts-base-url
+							append google-fonts value
+						]
+					)
+				]
+			]
 		]
 
 		[selector | (repend rules [["body"] current: ruleset/new])]
@@ -563,9 +576,28 @@ parser: context [
 	render: does [
 		rejoin collect [
 			keep {/* CSSR Output */^/}
-			if google-fonts [
-				; keep rejoin ["^/@import url('" google-fonts "');^/"]
-				keep "^//* Google Fonts Support to Follow */^/"
+			if all [
+				block? google-fonts
+				not empty? google-fonts
+			][
+				keep "^/@import url ('"
+				keep mold join google-fonts-base-url collect [
+					repeat font length? google-fonts [
+						unless font = 1 [keep "|"]
+						case [
+							url? google-fonts/:font [
+								keep google-fonts/:font
+							]
+							block? google-fonts/:font [
+								keep replace/all mold to url! take google-fonts/:font "%20" "+"
+								repeat variant length? google-fonts/:font [
+									keep back change to url! mold google-fonts/:font/:variant either variant = 1 [":"][","]
+								]
+							]
+						]
+					]
+				]
+				keep "');^/"
 			]
 			if reset? [
 				keep "^//** CSS Reset Begin */^/^/"
