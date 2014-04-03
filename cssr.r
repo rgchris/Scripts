@@ -48,7 +48,7 @@ ruleset: context [
 	form-value: func [values /local value choices][
 		any [
 			switch value: take values [
-				em px deg vw vh [form-number take values value]
+				em pt px deg vw vh [form-number take values value]
 				pct [form-number take values "%"]
 				* [form-number take values none]
 				| [","]
@@ -195,6 +195,7 @@ parser: context [
 		[set zero integer! (zero: either zero? zero [[]][[end skip]]) zero]
 	]
 	em: ['em number! | zero]
+	pt: ['pt number!]
 	px: [opt 'px number!]
 	deg: ['deg number! | zero]
 	scalar: ['* number! | zero]
@@ -227,7 +228,7 @@ parser: context [
 	positions: [position-y position-x | position-y | position-x]
 	repeats: ['repeat-x | 'repeat-y | 'repeat ['x | 'y] | 'no-repeat | 'no 'repeat]
 	font-name: [string! | 'sans-serif | 'serif | 'monospace]
-	length: [em | px | percent | vh | vw]
+	length: [em | pt | px | percent | vh | vw]
 	angle: [deg]
 	number: [scalar | number!]
 	box-model: ['block | 'inline 'block | 'inline-block]
