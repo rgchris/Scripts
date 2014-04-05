@@ -1,7 +1,7 @@
 Rebol [
 	Title: "CSSR"
 	Purpose: "A Style Sheet Dialect that generates CSS"
-	Version: 0.1.5
+	Version: 0.1.6
 	Date: 17-Jun-2013
 	Author: "Christopher Ross-Gill"
 	Name: 'cssr
@@ -401,7 +401,31 @@ parser: context [
 		| 'border any [
 			  mark 1 4 border-style capture (emits 'border-style)
 			| mark 1 4 color capture (emits 'border-color)
-			| 'radius mark length capture (emits 'border-radius)
+			| 'radius [
+				some [
+					  'top mark 1 2 length capture (
+						emits 'border-top-left-radius
+						emits 'border-top-right-radius
+					)
+					| 'bottom mark 1 2 length capture (
+						emits 'border-bottom-left-radius
+						emits 'border-bottom-right-radius
+					)
+					| 'right mark 1 2 length capture (
+						emits 'border-top-right-radius
+						emits 'border-bottom-right-radius
+					)
+					| 'left mark 1 2 length capture (
+						emits 'border-top-left-radius
+						emits 'border-bottom-left-radius
+					)
+					| 'top 'right mark 1 2 length capture (emits 'border-top-right-radius)
+					| 'top 'left mark 1 2 length capture (emits 'border-top-left-radius)
+					| 'bottom 'right mark 1 2 length capture (emits 'border-bottom-right-radius)
+					| 'bottom 'left mark 1 2 length capture (emits 'border-bottom-left-radius)
+				]
+				| mark 1 2 length capture (emits 'border-radius)
+			]
 			| mark 1 4 length capture (emits 'border-width)
 		]
 		| ['radius | 'rounded] mark length capture (emits 'border-radius)
