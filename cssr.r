@@ -422,6 +422,7 @@ parser: context [
 			| mark opt 'no 'underline capture (emits 'text-decoration)
 			| ['line-through | 'strike 'through] (emit 'text-decoration 'line-through)
 		]
+		| 'text 'indent mark length capture (emits 'text-indent)
 		| 'line 'height mark [length | scalar] capture (emits 'line-height)
 		| 'spacing mark number capture (emits 'letter-spacing)
 		| mark opt 'no 'bold capture (emits 'font-weight)
