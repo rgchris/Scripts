@@ -1,7 +1,7 @@
 Rebol [
 	Title: "CSSR"
 	Purpose: "A Style Sheet Dialect that generates CSS"
-	Version: 0.1.6
+	Version: 0.1.7
 	Date: 17-Jun-2013
 	Author: "Christopher Ross-Gill"
 	Name: 'cssr
@@ -221,6 +221,11 @@ parser: context [
 		| 'background | 'color | 'border | 'opacity | 'margin
 		| 'transform | 'font | 'indent | 'spacing
 	]
+	list-styles: [
+		  'disc | 'circle | 'square | 'decimal | 'decimal-leading-zero
+		| 'lower-roman | 'upper-roman | 'lower-greek | 'lower-latin
+		| 'upper-latin | 'armenian | 'georgian | 'lower-alpha | 'upper-alpha
+	]
 	direction: ['x | 'y | 'z]
 	position-x: ['right | 'left | 'center]
 	position-y: ['top | 'bottom | 'middle]
@@ -371,8 +376,15 @@ parser: context [
 	property: [
 		  mark box-model capture (emits 'display)
 		| mark 'border-box capture (emits 'box-sizing)
-		| ['min 'height | 'min-height] mark length capture (emits 'min-height)
-		| ['min 'width | 'min-width] mark length capture (emits 'min-width)
+		| 'min some [
+			  'width mark length capture (emits 'min-width)
+			| 'height mark length capture (emits 'min-height)
+		]
+		| 'max some [
+			  'width mark length capture (emits 'max-width)
+			| 'height mark length capture (emits 'max-height)
+		]
+		| mark ['min-width | 'min-height | 'max-width | 'max-height] length capture (emits take captured)
 		| 'height mark length capture (emits 'height)
 		| 'margin [
 			mark [
@@ -534,6 +546,9 @@ parser: context [
 			| mark repeats capture (emits 'background-repeat)
 			| mark ['contain | 'cover] capture (emits 'background-size)
 		]
+		| 'no ['list opt 'style | 'bullet] (emit 'list-style-type 'none)
+		| opt ['list opt 'style | 'bullet] mark list-styles capture (emits 'list-style-type)
+		| mark ['inside | 'outside] capture (emits 'list-style-position)
 
 		; Any Singleton Values
 		| mark [
