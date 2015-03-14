@@ -1,11 +1,11 @@
-REBOL [
+Rebol [
 	Title: "JSON Parser for Rebol 3"
 	Author: "Christopher Ross-Gill"
 	Type: 'module
 	Date: 26-Jun-2013
 	Home: http://www.ross-gill.com/page/JSON_and_REBOL
 	File: %altjson.r
-	Version: 0.3.1
+	Version: 0.3.2
 	Name: 'altjson
 	Exports: [load-json to-json]
 	Purpose: "Convert a Rebol block to a JSON string"
@@ -15,6 +15,7 @@ REBOL [
 		28-Aug-2010 0.2.4 "Encodes tag! any-type! paired blocks as an object"
 		2-Dec-2010 0.2.5 "Support for time! added"
 		15-July-2011 0.2.6 "Flattens Flickr '_content' objects"
+		14-Mar-2015 0.3.2 "Converts Json input to string before parsing."
 	]
 	Notes: {
 		- Simple Escaping
@@ -74,11 +75,11 @@ load-json: use [
 		ex: [[#"e" | #"E"] opt [#"+" | #"-"] some dg]
 		nm: [opt #"-" some dg opt [#"." some dg] opt ex]
 
-		as-num: func [val][
-			either parse val [opt "-" some dg][
-				any [attempt [to integer! val] to issue! val]
-			][
-				to decimal! val
+		as-num: func [val [string!]][
+			case [
+				not parse val [opt "-" some dg][to decimal! val]
+				not integer? try [to integer! val][to issue! val]
+				'else [to integer! val]
 			]
 		]
 
@@ -143,12 +144,17 @@ load-json: use [
 		[catch] "Convert a json string to rebol data"
 		json [string! binary! file! url!] "JSON string"
 	][
-		tree: here: copy []
-		if any [file? json url? json][
-			if error? json: try [read (json)][
-				throw :json
+		case/all [
+			any [file? json url? json][
+				if error? json: try [read/string (json)][
+					do :json
+				]
 			]
+			binary? json [json: to string! json]
 		]
+
+		tree: here: copy []
+
 		either parse json [space opt value space][
 			pick tree 1
 		][
