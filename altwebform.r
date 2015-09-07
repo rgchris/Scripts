@@ -1,17 +1,17 @@
 Rebol [
 	Title: "Web Form Encoder/Decoder for Rebol 3"
 	Author: "Christopher Ross-Gill"
-	Date: 6-Jul-2013
+	Date: 6-Sep-2015
 	Home: http://www.ross-gill.com/page/Web_Forms_and_REBOL
 	File: %altwebform.r
-	Version: 0.10.0
+	Version: 0.10.1
 	Purpose: "Convert a Rebol block to a URL-Encoded Web Form string"
 	Rights: http://opensource.org/licenses/Apache-2.0
 	Type: 'module
 	Name: 'rgchris.altwebform
 	Exports: [url-decode url-encode load-webform to-webform]
 	History: [
-		06-Sep-2015 0.10.0 "Add Ruby-style paths to encoding"
+		06-Sep-2015 0.10.1 "Add Ruby-style paths to encoding"
 		06-Jul-2013  0.9.5 "Fix encoding/decoding of _ character"
 		01-Mar-2013  0.9.4 "Detach URL-DECODE and URL-ENCODE"
 		27-Feb-2013  0.9.2 "Correct encoding of UTF-8 values"
@@ -27,7 +27,11 @@ url-decode: use [as-is hex space][
 	as-is: charset ["-.~" #"0" - #"9" #"A" - #"Z" #"a" - #"z"]
 	hex: charset [#"0" - #"9" #"a" - #"f" #"A" - #"F"]
 
-	func [text [any-string!] /wiki][
+	func [
+		"Decode percent-encoded text from URLs and Web Forms"
+		text [any-string!] "Text to Decode"
+		/wiki "Assumes `_` character is used to represent spaces"
+	][
 		space: either wiki [#"_"][#"+"]
 		either parse text: to binary! text [
 			copy text any [
@@ -46,7 +50,11 @@ url-encode: use [as-is space percent-encode][
 		insert next text enbase/base copy/part text 1 16 change text "%"
 	]
 
-	func [text [any-string!] /wiki][
+	func [
+		"Encode text using percent-encoding for URLs and Web Forms"
+		text [any-string!] "Text to encode"
+		/wiki "Use `_` character to represent spaces"
+	][
 		space: either wiki [#"_"][#"+"]
 		either parse text: to binary! text [
 			copy text any [
@@ -110,14 +118,14 @@ load-webform: use [result path string pair as-path term][
 	]
 
 	func [
-		[catch] "Loads Data from a URL-Encoded Web Form string"
-		webform [string! none!]
+		[catch] "Loads data from a URL-Encoded Web Form string"
+		webform [string! none!] "Form to decode"
 	][
 		webform: any [webform ""]
 		result: copy []
 
 		either parse webform [opt [#"&" | #"?"] any pair][result][
-			make error! "Not a URL Encoded Web Form"
+			do make error! "Not a URL Encoded Web Form"
 		]
 	]
 ]
@@ -128,7 +136,7 @@ to-webform: use [
 ][
 	path: []
 	form-key: does [
-		rejoin collect [
+		url-encode rejoin collect [
 			keep first path
 			foreach key next path [
 				keep reduce either ruby-style? [["[" key "]"]][["." key]]
@@ -161,7 +169,7 @@ to-webform: use [
 	object: [
 		and opt reference any [
 			here: [word! | set-word!] (
-				append path url-encode to string! to word! here/1
+				append path to string! to word! here/1
 			)
 			[value | block] (remove back tail path)
 		] end
@@ -176,7 +184,9 @@ to-webform: use [
 
 	func [
 		"Serializes block data as URL-Encoded Web Form string"
-		data [block! object!] /prefix /ruby-style
+		data [block! object!] "Block or object to encode"
+		/prefix "Includes the `?` character used to precede URL query strings"
+		/ruby-style "Encodes structured keys using `a[b][c]` notation"
 	][
 		clear path
 		webform: copy ""
