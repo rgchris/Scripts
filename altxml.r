@@ -1,15 +1,21 @@
-REBOL [
-	Title: "XML for REBOL 3"
-	File: %altxml.r
-	Name: 'altxml
+Rebol [
+	Title: "XML Parser/Object Model for Rebol 3"
 	Author: "Christopher Ross-Gill"
-	Purpose: "XML handler for Rebol v3"
-	Comment: http://www.ross-gill.com/page/XML_and_REBOL
 	Date: 22-Oct-2009
-	Version: 0.4.0
+	Home: http://www.ross-gill.com/page/XML_and_REBOL
+	File: %altxml.r
+	Version: 0.4.1
+	Purpose: "XML handler for Rebol v3"
+	Rights: http://opensource.org/licenses/Apache-2.0
 	Type: 'module
-	History: [0.3.0 16-Feb-2013 0.4.0 14-Apr-2013]
+	Name: 'rgchris.altxml
 	Exports: [load-xml decode-xml]
+	History: [
+		07-Apr-2014 0.4.1 "Fixed loop when handling unterminated empty tags"
+		14-Apr-2013 0.4.0 "Added /PATH method"
+		16-Feb-2013 0.3.0 "Switch to using PATH! type to represent Namespaces"
+		22-Oct-2009 0.2.0 "Conversion from Rebol 2"
+	]
 ]
 
 word: use [w1 w+][
@@ -316,7 +322,7 @@ load-xml: use [
 			tag/1: to-tag tag/1
 			while [tag <> position/1][
 				probe reform ["No End Tag:" position/1]
-				if empty? branch [make error! "End tag error!"]
+				if empty? branch [do make error! "End tag error!"]
 				take branch
 			]
 			tree: position: take branch
