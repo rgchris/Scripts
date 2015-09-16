@@ -4,20 +4,21 @@ Rebol [
 	Date: 21-Apr-2015
 	Home: http://www.ross-gill.com/page/JSON_and_Rebol
 	File: %altjson.r
-	Version: 0.3.3
+	Version: 0.3.4
 	Purpose: "Convert a Rebol block to a JSON string"
 	Rights: http://opensource.org/licenses/Apache-2.0
 	Type: 'module
 	Name: 'rgchris.altjson
 	Exports: [load-json to-json]
 	History: [
+		16-Sep-2015 0.3.4 "Reinstate /FLAT refinement"
 		21-Apr-2015 0.3.3 {
 			- Merge from Reb4.me version
 			- Recognise set-word pairs as objects
 			- Use map! as the default object type
 			- Serialize dates in RFC 3339 form
 		}
-		14-Mar-2015 0.3.2 "Converts Json input to string before parsing."
+		14-Mar-2015 0.3.2 "Converts Json input to string before parsing"
 		07-Jul-2014 0.3.0 "Initial support for JSONP"
 		15-Jul-2011 0.2.6 "Flattens Flickr '_content' objects"
 		02-Dec-2010 0.2.5 "Support for time! added"
@@ -94,7 +95,7 @@ load-json: use [
 		[copy val nm (val: as-num val)]
 	]
 
-	string: use [mk ch es hx mp decode][
+	string: use [ch es hx mp decode][
 		ch: complement charset {\"}
 		es: charset {"\/bfnrt}
 		hx: charset "0123456789ABCDEFabcdef"
@@ -114,7 +115,7 @@ load-json: use [
 
 			func [text [string! none!]][
 				either none? text [make string! 0][
-					all [parse/all text [any [to "\" escape] to end] text]
+					all [parse text [any [to "\" escape] to end] text]
 				]
 			]
 		]
@@ -134,13 +135,13 @@ load-json: use [
 		name: [
 			string space #":" space (
 				emit any [
-					to-word val
+					to either flat? [tag!][word!] val
 					to binary! val
 				]
 			)
 		]
 		list: [space opt [name value any [comma name value]] space]
-		as-map: [(here: change back here make map! pick back here 1)]
+		as-map: [(unless flat? [here: change back here make map! pick back here 1])]
 
 		[#"{" new-child list #"}" neaten/2 to-parent as-map]
 	]
@@ -165,6 +166,7 @@ load-json: use [
 	func [
 		"Convert a JSON string to Rebol data"
 		json [string! binary! file! url!] "JSON string"
+		/flat "Objects are imported as tag-value pairs"
 		/padded "Loads JSON data wrapped in a JSONP envelope"
 	][
 		case/all [
@@ -176,6 +178,7 @@ load-json: use [
 			binary? json [json: to string! json]
 		]
 
+		flat?: :flat
 		tree: here: copy []
 
 		either parse json either padded [
@@ -209,7 +212,7 @@ to-json: use [
 		]
 
 		func [txt][
-			parse/all txt [any [txt: some ch | skip (txt: encode txt) :txt]]
+			parse txt [any [txt: some ch | skip (txt: encode txt) :txt]]
 			head txt
 		]
 	]
