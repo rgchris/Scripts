@@ -1,31 +1,39 @@
 Rebol [
 	Title: "JSON Parser for Rebol 3"
 	Author: "Christopher Ross-Gill"
-	Type: 'module
-	Date: 26-Jun-2013
-	Home: http://www.ross-gill.com/page/JSON_and_REBOL
+	Date: 21-Apr-2015
+	Home: http://www.ross-gill.com/page/JSON_and_Rebol
 	File: %altjson.r
-	Version: 0.3.2
-	Name: 'altjson
-	Exports: [load-json to-json]
+	Version: 0.3.3
 	Purpose: "Convert a Rebol block to a JSON string"
+	Rights: http://opensource.org/licenses/Apache-2.0
+	Type: 'module
+	Name: 'rgchris.altjson
+	Exports: [load-json to-json]
 	History: [
-		22-May-2005 0.1.0 "Original Version"
-		6-Aug-2010 0.2.2 "Issue! composed of digits encoded as integers"
-		28-Aug-2010 0.2.4 "Encodes tag! any-type! paired blocks as an object"
-		2-Dec-2010 0.2.5 "Support for time! added"
-		15-July-2011 0.2.6 "Flattens Flickr '_content' objects"
+		21-Apr-2015 0.3.3 {
+			- Merge from Reb4.me version
+			- Recognise set-word pairs as objects
+			- Use map! as the default object type
+			- Serialize dates in RFC 3339 form
+		}
 		14-Mar-2015 0.3.2 "Converts Json input to string before parsing."
+		07-Jul-2014 0.3.0 "Initial support for JSONP"
+		15-Jul-2011 0.2.6 "Flattens Flickr '_content' objects"
+		02-Dec-2010 0.2.5 "Support for time! added"
+		28-Aug-2010 0.2.4 "Encodes tag! any-type! paired blocks as an object"
+		06-Aug-2010 0.2.2 "Issue! composed of digits encoded as integers"
+		22-May-2005 0.1.0 "Original Version"
 	]
 	Notes: {
 		- Simple Escaping
-		- Converts date! to RFC 822 Date String ('to-idate)
+		- Converts date! to RFC 3339 Date String
 	}
 ]
 
 load-json: use [
 	tree branch here val flat? emit new-child to-parent neaten to-word
-	space comma number string block object _content value
+	space comma number string block object _content value ident
 ][
 	branch: make block! 10
 
@@ -78,15 +86,15 @@ load-json: use [
 		as-num: func [val [string!]][
 			case [
 				not parse val [opt "-" some dg][to decimal! val]
-				not integer? try [to integer! val][to issue! val]
-				'else [to integer! val]
+				not integer? val: try [to integer! val][to issue! val]
+				val [val]
 			]
 		]
 
 		[copy val nm (val: as-num val)]
 	]
 
-	string: use [ch dq es hx mp decode][
+	string: use [mk ch es hx mp decode][
 		ch: complement charset {\"}
 		es: charset {"\/bfnrt}
 		hx: charset "0123456789ABCDEFabcdef"
@@ -94,16 +102,18 @@ load-json: use [
 
 		decode: use [ch mk escape][
 			escape: [
+				; should be possible to use CHANGE keyword to replace escaped characters.
 				mk: #"\" [
-					  es (mk: change/part mk select mp mk/2 2)
-					| #"u" copy ch 4 hx (
-						mk: change/part mk to char! to integer! to issue! ch 6
+					es (mk: change/part mk select mp mk/2 2)
+					|
+					#"u" copy ch 4 hx (
+						mk: change/part mk to char! to integer! debase/base ch 16 6
 					)
 				] :mk
 			]
 
-			func [text [string! none!] /mk][
-				either none? text [copy ""][
+			func [text [string! none!]][
+				either none? text [make string! 0][
 					all [parse/all text [any [to "\" escape] to end] text]
 				]
 			]
@@ -120,14 +130,26 @@ load-json: use [
 
 	_content: [#"{" space {"_content"} space #":" space value space "}"] ; Flickr
 
-	object: use [name list as-object][
+	object: use [name list as-map][
 		name: [
-			string space #":" space (emit any [to-word val val])
+			string space #":" space (
+				emit any [
+					to-word val
+					to binary! val
+				]
+			)
 		]
 		list: [space opt [name value any [comma name value]] space]
-		as-object: [(here: change back here make map! pick back here 1)]
+		as-map: [(here: change back here make map! pick back here 1)]
 
-		[#"{" new-child list #"}" neaten/2 to-parent as-object]
+		[#"{" new-child list #"}" neaten/2 to-parent as-map]
+	]
+
+	ident: use [initial ident][
+		initial: charset ["$_" #"a" - #"z" #"A" - #"Z"]
+		ident: union initial charset [#"0" - #"9"]
+
+		[initial any ident]
 	]
 
 	value: [
@@ -141,8 +163,9 @@ load-json: use [
 	]
 
 	func [
-		[catch] "Convert a json string to rebol data"
+		"Convert a JSON string to Rebol data"
 		json [string! binary! file! url!] "JSON string"
+		/padded "Loads JSON data wrapped in a JSONP envelope"
 	][
 		case/all [
 			any [file? json url? json][
@@ -155,7 +178,11 @@ load-json: use [
 
 		tree: here: copy []
 
-		either parse json [space opt value space][
+		either parse json either padded [
+			[space ident space "(" space opt value space ")" opt ";" space]
+		][
+			[space opt value space]
+		][
 			pick tree 1
 		][
 			do make error! "Not a valid JSON string"
@@ -164,8 +191,8 @@ load-json: use [
 ]
 
 to-json: use [
-	json emit emits escape emit-issue
-	here comma block object value
+	json emit emits escape emit-issue emit-date
+	here reference comma block object block-of-pairs value
 ][
 	emit: func [data][repend json data]
 	emits: func [data][emit {"} emit data emit {"}]
@@ -194,12 +221,54 @@ to-json: use [
 		[(either parse next form here/1 [copy mk nm][emit mk][emits here/1])]
 	]
 
+	emit-date: use [pad second][
+		pad: func [part length][part: to string! part head insert/dup part "0" length - length? part]
+		[(
+			emits rejoin collect [
+				keep reduce [pad here/1/year 4 "-" pad here/1/month 2 "-" pad here/1/day 2]
+				if here/1/time [
+					keep reduce ["T" pad here/1/hour 2 ":" pad here/1/minute 2 ":"]
+					keep either integer? here/1/second [
+						pad here/1/second 2
+					][
+						second: split to string! here/1/second "."
+						reduce [pad second/1 2 "." second/2]
+					]
+					keep either any [
+						none? here/1/zone
+						zero? here/1/zone
+					]["Z"][
+						reduce [
+							either here/1/zone/hour < 0 ["-"]["+"]
+							pad abs here/1/zone/hour 2 ":" pad here/1/zone/minute 2
+						]
+					]
+				]
+			]
+		)]
+	]
+
+	reference: [
+		here: get-word! (change/only here attempt [get/any here/1])
+		fail
+	]
+
 	comma: [(if not tail? here [emit ","])]
-	block: [(emit "[") any [here: value here: comma] (emit "]")]
+
+	block: [
+		(emit "[") any [here: value here: comma] (emit "]")
+	]
+
+	block-of-pairs: [
+		  some [word! skip]
+		| some [set-word! skip]
+		| some [tag! skip]
+	]
+
 	object: [
 		(emit "{")
 		any [
-			here: [any-string! | any-word!]
+			here: [set-word! (change here to word! here/1) | any-string! | any-word!]
 			(emit [{"} escape to string! here/1 {":}])
 			here: value here: comma
 		]
@@ -207,18 +276,20 @@ to-json: use [
 	]
 
 	value: [
-		  number! (emit here/1)
+		  reference ; resolve a GET-WORD! reference
+		| number! (emit here/1)
 		| [logic! | 'true | 'false] (emit form here/1)
 		| [none! | 'none] (emit 'null)
-		| date! (emits to-idate here/1)
+		| date! emit-date
 		| issue! emit-issue
 		| [
 			any-string! | word! | lit-word! | tuple! | pair! | money! | time!
 		] (emits escape form here/1)
+		| any-word! (emits escape form to word! here/1)
 
-		| into [some [tag! skip]] :here (change/only here copy first here) into object
-		| any-block! :here (change/only here copy first here) into block
 		| [object! | map!] :here (change/only here body-of first here) into object
+		| into block-of-pairs :here (change/only here copy first here) into object
+		| any-block! :here (change/only here copy first here) into block
 
 		| any-type! (emits [type? here/1 "!"])
 	]
