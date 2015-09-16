@@ -87,7 +87,7 @@ load-json: use [
 		as-num: func [val [string!]][
 			case [
 				not parse val [opt "-" some dg][to decimal! val]
-				not integer? val: try [to integer! val][to issue! val]
+				not integer? try [val: to integer! val][to issue! val]
 				val [val]
 			]
 		]
