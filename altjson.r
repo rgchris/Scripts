@@ -4,13 +4,14 @@ Rebol [
 	Date: 16-Sep-2015
 	Home: http://www.ross-gill.com/page/JSON_and_Rebol
 	File: %altjson.r
-	Version: 0.3.4
+	Version: 0.3.5
 	Purpose: "Convert a Rebol block to a JSON string"
 	Rights: http://opensource.org/licenses/Apache-2.0
 	Type: 'module
 	Name: 'rgchris.altjson
 	Exports: [load-json to-json]
 	History: [
+		17-Sep-2015 0.3.5 "Added GET-PATH! lookup"
 		16-Sep-2015 0.3.4 "Reinstate /FLAT refinement"
 		21-Apr-2015 0.3.3 {
 			- Merge from Reb4.me version
@@ -195,7 +196,7 @@ load-json: use [
 
 to-json: use [
 	json emit emits escape emit-issue emit-date
-	here reference comma block object block-of-pairs value
+	here lookup comma block object block-of-pairs value
 ][
 	emit: func [data][repend json data]
 	emits: func [data][emit {"} emit data emit {"}]
@@ -251,8 +252,9 @@ to-json: use [
 		)]
 	]
 
-	reference: [
-		here: get-word! (change/only here attempt [get/any here/1])
+	lookup: [
+		here: [get-word! | get-path!]
+		(change here reduce reduce [here/1])
 		fail
 	]
 
@@ -263,8 +265,7 @@ to-json: use [
 	]
 
 	block-of-pairs: [
-		  some [word! skip]
-		| some [set-word! skip]
+		  some [set-word! skip]
 		| some [tag! skip]
 	]
 
@@ -279,9 +280,9 @@ to-json: use [
 	]
 
 	value: [
-		  reference ; resolve a GET-WORD! reference
+		  lookup ; resolve a GET-WORD! reference
 		| number! (emit here/1)
-		| [logic! | 'true | 'false] (emit form here/1)
+		| [logic! | 'true | 'false] (emit to string! here/1)
 		| [none! | 'none] (emit 'null)
 		| date! emit-date
 		| issue! emit-issue
@@ -294,7 +295,7 @@ to-json: use [
 		| into block-of-pairs :here (change/only here copy first here) into object
 		| any-block! :here (change/only here copy first here) into block
 
-		| any-type! (emits [type? here/1 "!"])
+		| any-type! (emits to tag! type? here/1)
 	]
 
 	func [data][
