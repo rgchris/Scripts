@@ -1,7 +1,7 @@
 Rebol [
 	Title: "JSON Parser for Rebol 3"
 	Author: "Christopher Ross-Gill"
-	Date: 21-Apr-2015
+	Date: 16-Sep-2015
 	Home: http://www.ross-gill.com/page/JSON_and_Rebol
 	File: %altjson.r
 	Version: 0.3.4
@@ -159,7 +159,7 @@ load-json: use [
 		| "false" (emit false)
 		| number (emit val)
 		| string (emit val)
-		| _content (emit val)
+		| _content
 		| object | block
 	]
 
