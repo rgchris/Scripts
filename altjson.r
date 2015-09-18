@@ -1,16 +1,17 @@
 Rebol [
 	Title: "JSON Parser for Rebol 3"
 	Author: "Christopher Ross-Gill"
-	Date: 16-Sep-2015
+	Date: 18-Sep-2015
 	Home: http://www.ross-gill.com/page/JSON_and_Rebol
 	File: %altjson.r
-	Version: 0.3.5
+	Version: 0.3.6
 	Purpose: "Convert a Rebol block to a JSON string"
 	Rights: http://opensource.org/licenses/Apache-2.0
 	Type: 'module
 	Name: 'rgchris.altjson
 	Exports: [load-json to-json]
 	History: [
+		18-Sep-2015 0.3.6 "Non-Word keys loaded as strings"
 		17-Sep-2015 0.3.5 "Added GET-PATH! lookup"
 		16-Sep-2015 0.3.4 "Reinstate /FLAT refinement"
 		21-Apr-2015 0.3.3 {
@@ -34,7 +35,7 @@ Rebol [
 ]
 
 load-json: use [
-	tree branch here val flat? emit new-child to-parent neaten to-word
+	tree branch here val is-flat emit new-child to-parent neaten word to-word
 	space comma number string block object _content value ident
 ][
 	branch: make block! 10
@@ -135,14 +136,18 @@ load-json: use [
 	object: use [name list as-map][
 		name: [
 			string space #":" space (
-				emit any [
-					to either flat? [tag!][word!] val
-					to binary! val
+				emit either is-flat [
+					to tag! val
+				][
+					any [
+						to-word val
+						val
+					]
 				]
 			)
 		]
 		list: [space opt [name value any [comma name value]] space]
-		as-map: [(unless flat? [here: change back here make map! pick back here 1])]
+		as-map: [(unless is-flat [here: change back here make map! pick back here 1])]
 
 		[#"{" new-child list #"}" neaten/2 to-parent as-map]
 	]
@@ -179,7 +184,7 @@ load-json: use [
 			binary? json [json: to string! json]
 		]
 
-		flat?: :flat
+		is-flat: :flat
 		tree: here: copy []
 
 		either parse json either padded [
