@@ -6,8 +6,8 @@ Rebol [
     Version: 0.3.0
     Purpose: "An elementary Web Server scheme for creating fast prototypes"
     Rights: http://opensource.org/licenses/Apache-2.0
-    Type: 'module
-    Name: 'rgchris.httpd
+    ; Type: 'module
+    ; Name: 'rgchris.httpd
     History: [
         23-Feb-2017 0.3.0 "Adapted from Rebol 2"
         06-Feb-2017 0.2.0 "Include HTTP Parser/Dispatcher"
@@ -19,6 +19,8 @@ Rebol [
     }
 ]
 
+do <r3-legacy>
+
 attempt [_: none] ; for Rebolsource Rebol 3 Compatibility
 invalid-utf8?: any [:invalid-utf? :invalid-utf8?]
 
@@ -26,7 +28,7 @@ net-utils: reduce ['net-log _]
 
 as-string: func [binary [binary!] /local mark][
     mark: binary
-    while [mark: invalid-utf8? text][
+    while [mark: invalid-utf8? mark][
         mark: change/part mark #{EFBFBD} 1
     ]
     to string! binary
