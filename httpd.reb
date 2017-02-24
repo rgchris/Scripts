@@ -107,26 +107,26 @@ sys/make-scheme [
     Request-Prototype: make object! [
         version: 1.1
         method: "GET"
-        action: headers: http-headers: none
-        oauth: target: binary: content: length: timeout: none
+        action: headers: http-headers: _
+        oauth: target: binary: content: length: timeout: _
         type: 'application/x-www-form-urlencoded
         server-software: rejoin [
             system/script/header/title " v" system/script/header/version " "
             "Rebol/" system/product " v" system/version
         ]
-        server-name: gateway-interface: none
+        server-name: gateway-interface: _
         server-protocol: "http"
         server-port: request-method: request-uri:
         path-info: path-translated: script-name: query-string:
         remote-host: remote-addr: auth-type:
-        remote-user: remote-ident: content-type: content-length: none
-        error: none
+        remote-user: remote-ident: content-type: content-length: _
+        error: _
     ]
 
     Response-Prototype: make object! [
         status: 404
         content: "Not Found"
-        location: none
+        location: _
         type: "text/html"
         length: 0
         kill?: false
@@ -174,7 +174,7 @@ sys/make-scheme [
                 client: first event/port
                 client/awake: :wake-client
                 client/locals: make object! [
-                    request: response: none
+                    request: response: _
                     wire: make binary! 0
                     parent: (server)
                     protect [request response wire parent]
@@ -224,7 +224,7 @@ sys/make-scheme [
             Accept: "*/*"
             Connection: "close"
             User-Agent: rejoin ["Rebol/" system/product " " system/version]
-            Content-Length: Content-Type: Authorization: Range: none
+            Content-Length: Content-Type: Authorization: Range: _
         ]
 
         transcribe: func [
@@ -284,7 +284,7 @@ sys/make-scheme [
 
                     net-utils/net-log action
                 ][
-                    ; action: target: request-method: query-string: binary: content: request-uri: none
+                    ; action: target: request-method: query-string: binary: content: request-uri: _
                     net-utils/net-log error: "Could Not Parse Request"
                 ]
             ]
