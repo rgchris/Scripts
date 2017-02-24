@@ -48,7 +48,7 @@ sys/make-scheme [
         case [
             url? spec/ref []
             block? spec/does []
-            parse spec/ref: reduce/only spec/ref [scheme httpd][
+            parse spec/ref [
                 set-word! lit-word!
                 integer! block!
             ][
@@ -83,6 +83,15 @@ sys/make-scheme [
         server
     ]
 
+    Start: func [port [port!]][
+        append system/ports/wait-list port
+    ]
+
+    Stop: func [port [port!]][
+        remove find system/ports/wait-list port
+        close port
+    ]
+
     Actor: [
         Open: func [server [port!]][
             print ["Server running on port:" server/spec/port-id]
@@ -94,8 +103,6 @@ sys/make-scheme [
             stop server/locals/subport
         ]
     ]
-
-    Buffer: make binary! 2 + Buffer-Size: 64 * 1024
 
     Request-Prototype: make object! [
         version: 1.1
@@ -126,15 +133,6 @@ sys/make-scheme [
         close?: true
     ]
 
-    Start: func [port [port!]][
-        append system/ports/wait-list port
-    ]
-
-    Stop: func [port [port!]][
-        remove find system/ports/wait-list port
-        close port
-    ]
-
     Wake-Client: use [instance][
         instance: 0
 
@@ -156,10 +154,9 @@ sys/make-scheme [
 
                 wrote [
                     unless send-chunk client [
-                        either client/locals/response/kill? [
+                        if client/locals/response/kill? [
                             close client
-                        ][
-                            read client
+                            stop client/locals/parent
                         ]
                     ]
                     client
@@ -305,7 +302,7 @@ sys/make-scheme [
         func [client [port!] /local response continue?][
             client/locals/response: response: make response-prototype []
             client/locals/parent/locals/handler client/locals/request response
-            write client head collect/into [
+            write client append make binary! 0 collect [
                 case/all [
                     not find status-codes response/status [
                         response/status: 500
@@ -325,7 +322,7 @@ sys/make-scheme [
                     keep reform ["^/Location:" response/location]
                 ]
                 keep "^/^/"
-            ] make binary! 0
+            ]
             insert clear client/locals/wire response/content
         ]
     ]
