@@ -303,7 +303,7 @@ to-json: use [
 		| into block-of-pairs :here (change/only here copy first here) into object
 		| any-block! :here (change/only here copy first here) into block
 
-		| any-type! (emits to tag! type? first here)
+		| any-type! (emits to tag! type-of first here)
 	]
 
 	func [data][
