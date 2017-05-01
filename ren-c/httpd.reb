@@ -6,8 +6,8 @@ Rebol [
 	Version: 0.3.0
 	Purpose: "An elementary Web Server scheme for creating fast prototypes"
 	Rights: http://opensource.org/licenses/Apache-2.0
-	; Type: 'module
-	; Name: 'rgchris.httpd
+	Type: module
+	Name: httpd
 	History: [
 		23-Feb-2017 0.3.0 "Adapted from Rebol 2"
 		06-Feb-2017 0.2.0 "Include HTTP Parser/Dispatcher"
@@ -55,7 +55,7 @@ sys/make-scheme [
 			handler: subport: _
 		]
 
-		server/locals/handler: func [
+		server/locals/handler: procedure [
 			request [object!]
 			response [object!]
 		] case [
@@ -99,7 +99,7 @@ sys/make-scheme [
 
 	actor: [
 		open: func [server [port!]][
-			print ["Server running on port:" server/spec/port-id]
+			; print ["Server running on port:" server/spec/port-id]
 			start server/locals/subport
 			open server/locals/subport
 		]
@@ -116,7 +116,7 @@ sys/make-scheme [
 		oauth: target: binary: content: length: timeout: _
 		type: 'application/x-www-form-urlencoded
 		server-software: rejoin [
-			system/script/header/title " v" system/script/header/version " "
+;		   system/script/header/title " v" system/script/header/version " "
 			"Rebol/" system/product " v" system/version
 		]
 		server-name: gateway-interface: _
@@ -156,7 +156,6 @@ sys/make-scheme [
 						read client
 					]
 				]
-
 				wrote [
 					unless send-chunk client [
 						if client/locals/response/kill? [
@@ -286,7 +285,7 @@ sys/make-scheme [
 		]
 
 		func [client [port!] /local response continue?][
-			probe client/locals/wire
+			; probe client/locals/wire
 			client/locals/response: response: make response-prototype []
 			client/locals/parent/locals/handler client/locals/request response
 			write client append make binary! 0 collect [
@@ -315,12 +314,25 @@ sys/make-scheme [
 		]
 	]
 
-	send-chunk: func [port [port!]][
-		   ;; Trying to send data >32'000 bytes at once will trigger R3's internal
-		   ;; chunking (which is buggy, see above). So we cannot use chunks >32'000
+	send-chunk: function [port [port!]][
+		   ;; Trying to send data > 32'000 bytes at once will trigger R3's internal
+		   ;; chunking (which is buggy, see above). So we cannot use chunks > 32'000
 		   ;; for our manual chunking.
+		   ;;
+		   ;; But let increase chunk size
+		   ;; to see if that bug exists again!
 		either empty? port/locals/wire [_][
-			write port take/part port/locals/wire 32'000
+			if error? err: trap [
+					write port take/part port/locals/wire 2'000'000'000
+			][
+				probe err
+				;; only mask some errors:
+				unless all [
+					err/code = 5020
+					err/id = 'write-error
+					find [32 104] err/arg2
+				] [fail err]
+			]
 		]
 	]
 ]
