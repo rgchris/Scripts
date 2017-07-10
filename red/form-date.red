@@ -86,10 +86,10 @@ form-date: make object! [
         "Equivalent to '%Y-%m-%d'"
         #"F" [date/year #"-" pad date/month 2 #"-" pad date/day 2]
 
-        "The ISO 8601 year with century as a number"
+        "The ISO 8601 year as a number [needs review]"
         #"g" [pad date/year 2] ; for review
 
-        "The ISO 8601 year without century as a number"
+        "The ISO 8601 year without century as a number [needs review]"
         #"G" [date/year] ; for review
 
         "The hour as a number using a 12-hour clock (range 1 to 12)"
@@ -150,7 +150,7 @@ form-date: make object! [
         "The week number of the current year as a 2-digit number (range 00 to 53, starting with the first Sunday as the first day of week 01)"
         #"U" [pad to integer! date/julian + 6 - (date/weekday // 7) / 7 2]
 
-        "The ISO 8601 week number of the current year as a 2-digit decimal number (range 01 to 53, where week 1 is the first week that has at least 4 days in the new year)"
+        "The ISO 8601 week number of the current year as a 2-digit decimal number (range 01 to 53, where week 1 is the first week that has at least 4 days in the new year) [needs review]"
         #"V" [pad date/isoweek 2] ; for review
 
         "The day of the week as a number (range 0 to 6, Sunday being 0). See also %u"
@@ -165,7 +165,7 @@ form-date: make object! [
         "The year as a 2-digit number without a century (range 00 to 99)"
         #"y" [pad date/year // 100 2]
 
-        "The year as a number without a century (range 0 to maximum supported)"
+        "The year as a number (range 0 to maximum supported)"
         #"Y" [date/year]
 
         "The time-zone as hour offset from UTC (without a ':' separator)"
