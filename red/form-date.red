@@ -183,7 +183,7 @@ form-date: make object! [
     ]
 
     description: rejoin collect [
-        keep "Target format. Available codes:"
+        keep "Formats a date to a given specification (similar to STRFTIME). Possible codes:"
         while [not tail? date-codes][
             keep reduce ["^/        %" date-codes/2 "  " take date-codes]
             date-codes: skip date-codes 2
@@ -193,9 +193,9 @@ form-date: make object! [
     date-codes: head date-codes
 
     form-date: func compose [
-        "Formats a date to a given specification (similar to STRFTIME)"
+        (description)
         date [date!] "Date to Format"
-        format [any-string!] (description)
+        format [any-string!] "Target format (see description above)."
         /utc "Convert the date to UTC prior to formatting"
         /local time zone
     ] compose/only [
@@ -208,7 +208,7 @@ form-date: make object! [
 
         time: date/time
         zone: date/zone
-        interpolate format (date-codes)
+        interpolate format bind date-codes 'date
     ]
 
     form-time: func [time [time!] format [any-string!] /local date zone][
