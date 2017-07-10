@@ -159,7 +159,7 @@ form-date: make object! [
         "The week number of the current year as a 2-digit number (range 00 to 53, starting with the first Monday as the first day of week 01)"
         #"W" [pad to integer! date/julian + 7 - date/weekday / 7 2]
 
-        "The second as a decimal number 00-60 with REBOL nanosecond precision, a period followed by 6 digits"
+        "The second as a decimal number 00-60 with Red nanosecond precision, a period followed by 6 digits"
         #"x" [pad-precise time/second]
 
         "The year as a 2-digit number without a century (range 00 to 99)"
