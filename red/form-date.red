@@ -77,14 +77,14 @@ form-date: make object! [
         "The day of the month as a number (range 01 to 31)"
         #"d" [pad date/day 2]
 
-        "Equivalent to '%Y/%m/%d'"
-        #"D" [date/year #"-" pad date/month 2 #"-" pad date/day 2]
+        "Equivalent to '%m/%d/%Y'"
+        #"D" [pad date/month 2 #"/" pad date/day 2 #"/" date/year]
 
         "The day of the month as a number, without padding"
         #"e" [date/day]
 
         "Equivalent to '%Y-%m-%d'"
-        #"F" [pad date/month 2 #"/" pad date/day 2 #"/" date/year]
+        #"F" [date/year #"-" pad date/month 2 #"-" pad date/day 2]
 
         "The ISO 8601 year with century as a number"
         #"g" [pad date/year 2] ; for review
@@ -176,9 +176,9 @@ form-date: make object! [
 
         "RFC3339 Date Stamp"
         #"c" [
-            date/year #"-" pad date/month 2 "-" pad date/day 2 "T"
+            date/year #"-" pad date/month 2 #"-" pad date/day 2 #"T"
             pad time/hour 2 #":" pad time/minute 2 #":" pad to integer! time/second 2 
-            either utc ["Z"][pad-zone zone]
+            either utc [#"Z"][pad-zone zone]
         ]
     ]
 
