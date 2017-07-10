@@ -306,7 +306,7 @@ load-xml: use [
 			unless parse path [
 				opt [
 					tag! (
-						selector: probe discern-tag pick path 1
+						selector: discern-tag pick path 1
 						unless all [
 							selector/type = result/type
 							selector/name = result/name
@@ -318,7 +318,6 @@ load-xml: use [
 
 				any [
 					selectors:
-					(probe selectors)
 					['* [tag! | issue!]]
 					(
 						kids: collect [
@@ -335,7 +334,7 @@ load-xml: use [
 					)
 					|
 					[tag! | issue!] (
-						selector: probe discern-tag pick selectors 1
+						selector: discern-tag pick selectors 1
 
 						kids: collect [
 							foreach kid collect [if result [keep result]] [
