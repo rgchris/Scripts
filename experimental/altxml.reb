@@ -75,7 +75,7 @@ load-xml: use [
 			]
 		]
 
-		; new: does [new-line/all/skip copy [parent _ first _ last _ type doccypants] true 2]
+		; new: does [new-line/all/skip copy [parent _ first _ last _ type document] true 2]
 		;
 		; make-item: func [parent [block! map! blank!]][
 		; 	new-line/all/skip compose/only [
@@ -84,7 +84,7 @@ load-xml: use [
 		; 	] true 2
 		; ]
 
-		insert-before: func [item [block! map!] /local node][
+		insert-before: func [item [block! map!] /local new][
 			new: make-item item/parent
 
 			new/back: item/back
@@ -394,7 +394,7 @@ load-xml: use [
 		; insert-after
 
 		as-block: use [form-node][
-			form-node: func [node][
+			form-node: func [node [block! map!]][
 				new-line/all/skip collect [
 					keep switch/default node/type [
 						element [to tag! node/name]
@@ -438,7 +438,7 @@ load-xml: use [
 				either namespace [mold to set-word! namespace][""]
 			]
 
-			form-node: func [node /child][
+			form-node: func [node [block! map!] /child][
 				switch node/type [
 					element [
 						emit ["<" enspace node/namespace form node/name]
