@@ -198,7 +198,7 @@ form-date: make object! [
         format [any-string!] "Target format (see description above)."
         /utc "Convert the date to UTC prior to formatting"
         /local time zone
-    ] compose/only [
+    ][
         either date/time [
             if utc [date/timezone: 0]
         ][
