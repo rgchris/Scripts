@@ -1,10 +1,10 @@
 Red [
     Title: "Date Formatter for Red"
     Author: "Christopher Ross-Gill"
-    Date: 6-Sep-2015
+    Date: 10-Jul-2017
     Home: http://scripts.rebol.info/scripts/form-date,docs
     File: %form-date.red
-    Version: 1.1.0
+    Version: 1.1.1
     Purpose: "Return formatted date string using strftime style format specifiers"
     Rights: http://opensource.org/licenses/Apache-2.0
     Type: 'module
