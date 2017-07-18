@@ -3,12 +3,12 @@ Rebol [
 	Author: "Christopher Ross-Gill"
 	Date: 18-Sep-2015
 	Home: http://www.ross-gill.com/page/JSON_and_Rebol
-	File: %altjson.r
+	File: %altjson.reb
 	Version: 0.3.6.1
-	Purpose: "Convert a Rebol block to a JSON string"
+	Purpose: "Convert a Rebol block to/from a JSON string"
 	Rights: http://opensource.org/licenses/Apache-2.0
-	; Type: 'module
-	; Name: 'rgchris.altjson
+	Type: module
+	Name: rgchris.altjson
 	Exports: [load-json to-json]
 	History: [
 		25-Feb-2017 0.3.6.1 "Ren-C Compatibilities"
@@ -33,8 +33,6 @@ Rebol [
 		- Converts date! to RFC 3339 Date String
 	}
 ]
-
-attempt [_: blank: none blank!: none! blank?: :none?]
 
 load-json: use [
 	tree branch here val is-flat emit new-child to-parent neaten word to-word

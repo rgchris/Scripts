@@ -7,8 +7,8 @@ Rebol [
 	Version: 0.5.0
 	Purpose: "XML Functions for Ren-C"
 	Rights: http://opensource.org/licenses/Apache-2.0
-	Type: 'module
-	Name: 'altxml
+	Type: module
+	Name: rgchris.altxml
 	Exports: [load-xml decode-xml]
 	History: [
 		09-Jul-2017 0.5.0 "Use linked lists for document model"
