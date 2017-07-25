@@ -506,7 +506,7 @@ rgchris.markup/html-tokenizer: make object! [
 			[space | #"/" | #">"] (
 				either all [
 					token/1 = 'end-tag
-					token/2 = "style"
+					find ["style" "textarea"] token/2
 					; token/2 = last-tag
 				][
 					switch series/1 [
@@ -1718,8 +1718,8 @@ rgchris.markup/html-tokenizer: make object! [
 	use: func ['target [word!]][
 		last-state-name: :this-state-name
 		this-state-name: target
-		probe to tag! target
-		probe copy/part series 10
+		; probe to tag! target
+		; probe copy/part series 10
 		state: this-state: any [
 			get in states :target
 			do make error! "No Such State"
@@ -1815,9 +1815,9 @@ rgchris.markup/load: make object! [
 						if token/4 [keep </>]
 
 						switch token/2 [
-							"script" [probe "SCRIPTING!" html-tokenizer/use script-data]
-							"title" [probe "TITLING!" html-tokenizer/use rcdata]
-							"style" [probe "STYLING!" html-tokenizer/use rawtext]
+							"script" [html-tokenizer/use script-data]
+							"title" [html-tokenizer/use rcdata]
+							"style" [html-tokenizer/use rawtext]
 						]
 					]
 
