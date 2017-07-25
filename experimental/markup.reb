@@ -1,5 +1,3 @@
-#!/usr/local/bin/ren-c ../test/markup.test.reb
-
 Red []
 
 _: none
