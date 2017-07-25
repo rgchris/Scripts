@@ -820,12 +820,12 @@ rgchris.markup/html-tokenizer: make object! [
 
 		script-data-double-escaped-dash: [
 			#"-" (
-				use script-data-double-escaped-dash-dash-state
+				use script-data-double-escaped-dash-dash
 				emit #"-"
 			)
 			|
 			#"<" (
-				use script-data-double-escaped-less-than-sign-state
+				use script-data-double-escaped-less-than-sign
 				emit #"<"
 			)
 			|
@@ -1116,7 +1116,7 @@ rgchris.markup/html-tokenizer: make object! [
 			untimely-end
 			|
 			(
-				use attribute-name-state
+				use attribute-name
 			)
 		]
 
@@ -1396,7 +1396,7 @@ rgchris.markup/html-tokenizer: make object! [
 
 		after-doctype-public-keyword: [
 			some space (
-				use before-doctype-public-identifier-state
+				use before-doctype-public-identifier
 			)
 			|
 			#"^(22)" error (
@@ -1457,7 +1457,7 @@ rgchris.markup/html-tokenizer: make object! [
 
 		doctype-public-identifier-double-quoted: [
 			#"^(22)" (
-				use after-doctype-public-identifier-state
+				use after-doctype-public-identifier
 			)
 			|
 			#">" error (
@@ -1478,7 +1478,7 @@ rgchris.markup/html-tokenizer: make object! [
 
 		doctype-public-identifier-single-quoted: [
 			#"'" (
-				use after-doctype-public-identifier-state
+				use after-doctype-public-identifier
 			)
 			|
 			#">" error (
@@ -1720,7 +1720,7 @@ rgchris.markup/html-tokenizer: make object! [
 		; probe copy/part series 10
 		state: this-state: any [
 			get in states :target
-			do make error! "No Such State"
+			do make error! rejoin ["No Such State: " uppercase form target]
 		]
 	]
 
@@ -1815,7 +1815,7 @@ rgchris.markup/load: make object! [
 						switch token/2 [
 							"script" [html-tokenizer/use script-data]
 							"title" [html-tokenizer/use rcdata]
-							"style" [html-tokenizer/use rawtext]
+							"style" "textarea" [html-tokenizer/use rawtext]
 						]
 					]
 
