@@ -1,8 +1,13 @@
 Red []
 
-_: none
-length-of: :length?
-loop-until: :until
+#macro ['| 'and] func [s e][[| ahead]]
+#macro _: func [][none]
+#macro length-of: func []['length?]
+#macro loop-until: func []['until]
+#macro blank!: func []['none!]
+#macro blank?: func []['none?]
+#macro group!: func []['paren!]
+#macro [quote put: 'func block! block!] func [s e][none]
 
 Rebol [
 	Title: "Markup Codec"
@@ -10,7 +15,7 @@ Rebol [
 	Date: 24-Jul-2017
 	; Home: 
 	File: %markup.reb
-	Version: 0.1.0
+	Version: 0.1.1
 	Purpose: "Markup Loader/Saver for Ren-C"
 	Rights: http://opensource.org/licenses/Apache-2.0
 	Type: module
@@ -21,12 +26,9 @@ Rebol [
 	]
 ]
 
-put: any [
-	:put
-	func [map [map!] key value][
-		if any-string? key [key: lock copy key]
-		poke map key value
-	]
+put: func [map [map!] key value][
+	if any-string? key [key: lock copy key]
+	poke map key value
 ]
 
 rgchris.markup: make map! 0
@@ -223,7 +225,7 @@ decode-markup: get in rgchris.markup/decode 'decode-markup
 
 rgchris.markup/html-tokenizer: make object! [
 	; 8.2.4 Tokenization https://www.w3.org/TR/html5/syntax.html#tokenization
-	series: mark: buffer: attribute: token: last-token: character: additional-character: _
+	series: mark: buffer: attribute: token: last-token: character: closer: additional-character: _
 	is-paused: is-done: false
 
 	b: [#"b" | #"B"]
@@ -247,7 +249,10 @@ rgchris.markup/html-tokenizer: make object! [
 	digit: charset "0123456789"
 	alphanum: union alpha digit
 	hex-digit: charset "0123456789abcdefABCDEF"
-	non-markup: complement charset "^@&<"
+	non-markup: complement charset "^@^-^/^M&< "
+	non-rcdata: complement charset "^@&<"
+	non-script: complement charset "^@<"
+	not-null: complement charset "^@"
 	; word: get in rgchris.markup/word 'word
 
 	error: [(report "Parse Error")]
@@ -257,12 +262,13 @@ rgchris.markup/html-tokenizer: make object! [
 	untimely-end: [end (report "Premature End" use data)]
 	emit-one: [mark: skip (emit mark/1)]
 
-	states: make object! [
+	states: [
 		data: [
-			  copy mark some non-markup (emit mark)
+			  space (emit series/1)
+			| copy mark [some non-markup any [some space some non-markup]] (emit mark)
 			| #"&" (use character-reference-in-data)
 			| #"<" (use tag-open)
-			| null-error (emit #"^@")
+			| null-error ; (emit unknown)
 			| timely-end
 		]
 
@@ -278,17 +284,17 @@ rgchris.markup/html-tokenizer: make object! [
 				either character/1 [
 					emit character/1
 				][
-					emit #"&"
+					emit "&"
 				]
 			) :mark
 		]
 
 		rcdata: [
-			  #"&" (use character-reference-in-rcdata)
+			  copy mark [some non-rcdata] (emit mark)
+			| #"&" (use character-reference-in-rcdata)
 			| #"<" (use rcdata-less-than-sign)
 			| null-error (emit unknown)
 			| timely-end
-			| emit-one
 		]
 
 		character-reference-in-rcdata: [
@@ -303,28 +309,29 @@ rgchris.markup/html-tokenizer: make object! [
 				either character/1 [
 					emit character/1
 				][
-					emit #"&"
+					emit "&"
 				]
 			) :mark
 		]
 
 		rawtext: [
-			  #"<" (use rawtext-less-than-sign)
+			  copy mark some non-script (emit mark)
+			| #"<" (use rawtext-less-than-sign)
 			| null-error (emit unknown)
 			| emit-one
 			| timely-end
 		]
 
 		script-data: [
-			  #"<" (use script-data-less-than-sign)
+			  copy mark some non-script (emit mark)
+			| #"<" (use script-data-less-than-sign)
 			| null-error (emit unknown)
-			| emit-one
 			| timely-end
 		]
 
 		plaintext: [
-			  null-error (emit unknown)
-			| emit-one
+			  copy mark some not-null (emit mark)
+			| null-error (emit unknown)
 			| timely-end
 		]
 
@@ -350,7 +357,7 @@ rgchris.markup/html-tokenizer: make object! [
 			(
 				use data
 				report "Unexpected character after '<'"
-				emit #"<" 
+				emit "<" 
 			)
 		]
 
@@ -412,7 +419,7 @@ rgchris.markup/html-tokenizer: make object! [
 			|
 			(
 				use rcdata
-				emit #"<"
+				emit "<"
 			)
 		]
 
@@ -435,9 +442,9 @@ rgchris.markup/html-tokenizer: make object! [
 			[space | #"/" | #">"] (
 				either all [
 					token/1 = 'end-tag
-					token/2 = "title"
-					; token/2 = last-tag
+					token/2 = closer
 				][
+					closer: _
 					switch series/1 [
 						#"^-" #"^/" #"^M" #" " [
 							use before-attribute-name
@@ -481,7 +488,7 @@ rgchris.markup/html-tokenizer: make object! [
 			|
 			(
 				use rawtext
-				emit #"<"
+				emit "<"
 			)
 		]
 
@@ -504,9 +511,9 @@ rgchris.markup/html-tokenizer: make object! [
 			[space | #"/" | #">"] (
 				either all [
 					token/1 = 'end-tag
-					find ["style" "textarea"] token/2
-					; token/2 = last-tag
+					token/2 = closer
 				][
+					closer: _
 					switch series/1 [
 						#"^-" #"^/" #"^M" #" " [
 							use before-attribute-name
@@ -555,7 +562,7 @@ rgchris.markup/html-tokenizer: make object! [
 			|
 			(
 				use script-data
-				emit #"<"
+				emit "<"
 			)
 		]
 
@@ -578,9 +585,9 @@ rgchris.markup/html-tokenizer: make object! [
 			[space | #"/" | #">"] (
 				either all [
 					token/1 = 'end-tag
-					token/2 = "script"
-					; token/2 = last-tag
+					token/2 = closer
 				][
+					closer: _
 					switch series/1 [
 						#"^-" #"^/" #"^M" #" " [
 							use before-attribute-name
@@ -619,7 +626,7 @@ rgchris.markup/html-tokenizer: make object! [
 		script-data-escape-start: [
 			#"-" (
 				use script-data-escape-start-dash
-				emit #"-"
+				emit "-"
 			)
 			|
 			(
@@ -630,7 +637,7 @@ rgchris.markup/html-tokenizer: make object! [
 		script-data-escape-start-dash: [
 			#"-" (
 				use script-data-escaped-dash-dash
-				emit #"-"
+				emit "-"
 			)
 			|
 			(
@@ -641,7 +648,7 @@ rgchris.markup/html-tokenizer: make object! [
 		script-data-escaped: [
 			#"-" (
 				use script-data-escaped-dash
-				emit #"-"
+				emit "-"
 			)
 			|
 			#"<" (
@@ -660,7 +667,7 @@ rgchris.markup/html-tokenizer: make object! [
 		script-data-escaped-dash: [
 			#"-" (
 				use script-data-escaped-dash-dash
-				emit #"-"
+				emit "-"
 			)
 			|
 			#"<" (
@@ -680,7 +687,7 @@ rgchris.markup/html-tokenizer: make object! [
 
 		script-data-escaped-dash-dash: [
 			#"-" (
-				emit #"-"
+				emit "-"
 			)
 			|
 			#"<" (
@@ -689,7 +696,7 @@ rgchris.markup/html-tokenizer: make object! [
 			|
 			#">" (
 				use script-data
-				emit #">"
+				emit ">"
 			)
 			|
 			null-error (
@@ -711,14 +718,14 @@ rgchris.markup/html-tokenizer: make object! [
 			|
 			copy mark some alpha (
 				use script-data-double-escape-start
-				emit #"<"
+				emit "<"
 				emit mark
 				buffer: lowercase mark
 			)
 			|
 			(
 				use script-data-escaped
-				emit #"<"
+				emit "<"
 			)
 		]
 
@@ -740,9 +747,9 @@ rgchris.markup/html-tokenizer: make object! [
 			[space | #"/" | #">"] (
 				either all [
 					token/1 = 'end-tag
-					token/2 = "script"
-					; token/2 = last-tag
+					token/2 = closer
 				][
+					closer: _
 					switch series/1 [
 						#"^-" #"^/" #"^M" #" " [
 							use before-attribute-name
@@ -801,12 +808,12 @@ rgchris.markup/html-tokenizer: make object! [
 		script-data-double-escaped: [
 			#"-" (
 				use script-data-double-escaped-dash
-				emit #"-"
+				emit "-"
 			)
 			|
 			#"<" (
 				use script-data-double-escaped-less-than-sign
-				emit #"<"
+				emit "<"
 			)
 			|
 			null-error (
@@ -821,12 +828,12 @@ rgchris.markup/html-tokenizer: make object! [
 		script-data-double-escaped-dash: [
 			#"-" (
 				use script-data-double-escaped-dash-dash
-				emit #"-"
+				emit "-"
 			)
 			|
 			#"<" (
 				use script-data-double-escaped-less-than-sign
-				emit #"<"
+				emit "<"
 			)
 			|
 			null-error (
@@ -842,17 +849,17 @@ rgchris.markup/html-tokenizer: make object! [
 
 		script-data-double-escaped-dash-dash: [
 			#"-" (
-				emit #"-"
+				emit "-"
 			)
 			|
 			#"<" (
 				use script-data-double-escaped-less-than-sign
-				emit #"<"
+				emit "<"
 			)
 			|
 			#">" (
 				use script-data
-				emit #">"
+				emit ">"
 			)
 			|
 			null-error (
@@ -870,7 +877,7 @@ rgchris.markup/html-tokenizer: make object! [
 		script-data-double-escaped-less-than-sign: [
 			#"/" (
 				use script-data-double-escape-end
-				emit #"/"
+				emit "/"
 				buffer: make string! 0
 			)
 			|
@@ -1084,9 +1091,9 @@ rgchris.markup/html-tokenizer: make object! [
 
 		character-reference-in-attribute-value: [
 			(use :last-state-name)
-			and [space | #"&" | #"<" | additional-character]
-			|
 			end
+			|
+			and [space | #"&" | #"<" | additional-character]
 			|
 			mark: (
 				character: decode-markup mark
@@ -1205,7 +1212,7 @@ rgchris.markup/html-tokenizer: make object! [
 			|
 			(
 				use comment
-				emit #"-"
+				emit "-"
 			)
 		]
 
@@ -1713,13 +1720,14 @@ rgchris.markup/html-tokenizer: make object! [
 
 	this-state-name: this-state: state: last-state-name: _
 
-	use: func ['target [word!]][
+	use: func ['target [word!] /until end-tag [string!]][
 		last-state-name: :this-state-name
 		this-state-name: target
+		if until [closer: :end-tag]
 		; probe to tag! target
 		; probe copy/part series 10
 		state: this-state: any [
-			get in states :target
+			select states :target
 			do make error! rejoin ["No Such State: " uppercase form target]
 		]
 	]
@@ -1813,9 +1821,15 @@ rgchris.markup/load: make object! [
 						if token/4 [keep </>]
 
 						switch token/2 [
-							"script" [html-tokenizer/use script-data]
-							"title" [html-tokenizer/use rcdata]
-							"style" "textarea" [html-tokenizer/use rawtext]
+							"script" [
+								html-tokenizer/use/until script-data token/2
+							]
+							"title" [
+								html-tokenizer/use/until rcdata token/2
+							]
+							"style" "textarea" [
+								html-tokenizer/use/until rawtext token/2
+							]
 						]
 					]
 
