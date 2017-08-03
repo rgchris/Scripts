@@ -351,7 +351,7 @@ rgchris.markup/html-tokenizer: make object! [
 			|
 			and "?" (
 				use bogus-comment
-				report 
+				report "Unexpected character after '<'"
 			)
 			|
 			(
