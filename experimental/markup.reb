@@ -7,6 +7,7 @@ Red []
 #macro blank!: func []['none!]
 #macro blank?: func []['none?]
 #macro group!: func []['paren!]
+#macro lock: func [][func [val][val]]
 #macro [quote put: 'func block! block!] func [s e][none]
 
 Rebol [
@@ -116,6 +117,91 @@ rgchris.markup/references: make object! [ ; need to update references
 		156 339
 		158 382
 		159 376
+	]
+	elements: make map! lock [
+		"a" a "address" address "applet" applet "area" area "article" article
+		"aside" aside "b" b "base" base "basefont" basefont "bgsound" bgsound
+		"big" big "blockquote" blockquote "body" body "br" br "button" button
+		"caption" caption "center" center "code" code "col" col "colgroup" colgroup
+		"dd" dd "details" details "dialog" dialog "dir" dir "div" div
+		"dl" dl "dt" dt "em" em "embed" embed "fieldset" fieldset
+		"figcaption" figcaption "figure" figure "font" font "footer" footer "form" form
+		"frame" frame "frameset" frameset "h1" h1 "h2" h2 "h3" h3
+		"h4" h4 "h5" h5 "h6" h6 "head" head "header" header
+		"hgroup" hgroup "hr" hr "html" html "i" i "iframe" iframe "image" image
+		"img" img "input" input "isindex" isindex "keygen" keygen "label" label
+		"li" li "link" link "listing" listing "main" main "marquee" marquee
+		"math" math "meta" meta "nav" nav "nobr" nobr "noembed" noembed
+		"noframes" noframes "noscript" noscript "object" object "ol" ol "optgroup" optgroup
+		"option" option "p" p "param" param "plaintext" plaintext "pre" pre
+		"rb" rb "rp" rp "rtc" rtc "ruby" ruby "s" s
+		"script" script "section" section "select" select "small" small "source" source
+		"span" span "strike" strike "strong" strong "style" style "sub" sub
+		"summary" summary "sup" sup "svg" svg "table" table "tbody" tbody
+		"td" td "template" template "textarea" textarea "tfoot" tfoot "th" th
+		"thead" thead "title" title "tr" tr "track" track "tt" tt
+		"u" u "ul" ul "var" var "wbr" wbr "xmp" xmp
+
+		; SVG
+		"altglyph" altGlyph "altglyphdef" altGlyphDef
+		"altglyphitem" altGlyphItem "animatecolor" animateColor
+		"animatemotion" animateMotion "animatetransform" animateTransform
+		"clippath" clipPath "feblend" feBlend
+		"fecolormatrix" feColorMatrix "fecomponenttransfer" feComponentTransfer
+		"fecomposite" feComposite "feconvolvematrix" feConvolveMatrix
+		"fediffuselighting" feDiffuseLighting "fedisplacementmap" feDisplacementMap
+		"fedistantlight" feDistantLight "fedropshadow" feDropShadow
+		"feflood" feFlood "fefunca" feFuncA
+		"fefuncb" feFuncB "fefuncg" feFuncG
+		"fefuncr" feFuncR "fegaussianblur" feGaussianBlur
+		"feimage" feImage "femerge" feMerge
+		"femergenode" feMergeNode "femorphology" feMorphology
+		"feoffset" feOffset "fepointlight" fePointLight
+		"fespecularlighting" feSpecularLighting "fespotlight" feSpotLight
+		"fetile" feTile "feturbulence" feTurbulence
+		"foreignobject" foreignObject "glyphref" glyphRef
+		"lineargradient" linearGradient "radialgradient" radialGradient
+		"textpath" textPath
+	]
+	tags: make map! [
+		a <a> address <address> applet <applet> area <area> article <article>
+		aside <aside> b <b> base <base> basefont <basefont> bgsound <bgsound>
+		big <big> blockquote <blockquote> body <body> br <br> button <button>
+		caption <caption> center <center> code <code> col <col> colgroup <colgroup>
+		dd <dd> details <details> dialog <dialog> dir <dir> div <div>
+		dl <dl> dt <dt> em <em> embed <embed> fieldset <fieldset>
+		figcaption <figcaption> figure <figure> font <font> footer <footer> form <form>
+		frame <frame> frameset <frameset> h1 <h1> h2 <h2> h3 <h3>
+		h4 <h4> h5 <h5> h6 <h6> head <head> header <header>
+		hgroup <hgroup> hr <hr> html <html> i <i> iframe <iframe> image <image>
+		img <img> input <input> isindex <isindex> keygen <keygen> label <label>
+		li <li> link <link> listing <listing> main <main> marquee <marquee>
+		math <math> meta <meta> nav <nav> nobr <nobr> noembed <noembed>
+		noframes <noframes> noscript <noscript> object <object> ol <ol> optgroup <optgroup>
+		option <option> p <p> param <param> plaintext <plaintext> pre <pre>
+		rb <rb> rp <rp> rtc <rtc> ruby <ruby> s <s>
+		script <script> section <section> select <select> small <small> source <source>
+		span <span> strike <strike> strong <strong> style <style> sub <sub>
+		summary <summary> sup <sup> svg <svg> table <table> tbody <tbody>
+		td <td> template <template> textarea <textarea> tfoot <tfoot> th <th>
+		thead <thead> title <title> tr <tr> track <track> tt <tt>
+		u <u> ul <ul> var <var> wbr <wbr> xmp <xmp>
+
+		; SVG
+		altGlyph <altGlyph> altGlyphDef <altGlyphDef> altGlyphItem <altGlyphItem>
+		animateColor <animateColor> animateMotion <animateMotion>
+		animateTransform <animateTransform> clipPath <clipPath> feBlend <feBlend>
+		feColorMatrix <feColorMatrix> feComponentTransfer <feComponentTransfer>
+		feComposite <feComposite> feConvolveMatrix <feConvolveMatrix>
+		feDiffuseLighting <feDiffuseLighting> feDisplacementMap <feDisplacementMap>
+		feDistantLight <feDistantLight> feDropShadow <feDropShadow> feFlood <feFlood>
+		feFuncA <feFuncA> feFuncB <feFuncB> feFuncG <feFuncG> feFuncR <feFuncR>
+		feGaussianBlur <feGaussianBlur> feImage <feImage> feMerge <feMerge>
+		feMergeNode <feMergeNode> feMorphology <feMorphology> feOffset <feOffset>
+		fePointLight <fePointLight> feSpecularLighting <feSpecularLighting>
+		feSpotLight <feSpotLight> feTile <feTile> feTurbulence <feTurbulence>
+		foreignObject <foreignObject> glyphRef <glyphRef> linearGradient <linearGradient>
+		radialGradient <radialGradient> textPath <textPath>
 	]
 ]
 
@@ -384,14 +470,17 @@ rgchris.markup/html-tokenizer: make object! [
 
 		tag-name: [
 			some space (
+				adjust token
 				use before-attribute-name
 			)
 			|
 			#"/" (
+				adjust token
 				use self-closing-start-tag
 			)
 			|
 			#">" (
+				adjust token
 				use data
 				emit also token token: _
 			)
@@ -1718,6 +1807,13 @@ rgchris.markup/html-tokenizer: make object! [
 
 	emit: report: _
 
+	adjust: func [token][
+		also token token/2: any [
+			select rgchris.markup/references/elements token/2
+			token/2
+		]
+	]
+
 	this-state-name: this-state: state: last-state-name: _
 
 	use: func ['target [word!] /until end-tag [string!]][
@@ -1821,14 +1917,14 @@ rgchris.markup/load: make object! [
 						if token/4 [keep </>]
 
 						switch token/2 [
-							"script" [
-								html-tokenizer/use/until script-data token/2
+							script [
+								html-tokenizer/use/until script-data form token/2
 							]
-							"title" [
-								html-tokenizer/use/until rcdata token/2
+							title [
+								html-tokenizer/use/until rcdata form token/2
 							]
-							"style" "textarea" [
-								html-tokenizer/use/until rawtext token/2
+							style textarea [
+								html-tokenizer/use/until rawtext form token/2
 							]
 						]
 					]
