@@ -8,6 +8,8 @@ Red []
 #macro blank?: func []['none?]
 #macro group!: func []['paren!]
 #macro lock: func [][func [val][val]]
+#macro unspaced: func []['rejoin]
+#macro spaced: func []['reform]
 #macro [quote put: 'func block! block!] func [s e][none]
 
 Rebol [
@@ -21,7 +23,7 @@ Rebol [
 	Rights: http://opensource.org/licenses/Apache-2.0
 	Type: module
 	Name: rgchris.markup
-	Exports: [decode-markup html-tokenizer load-markup]
+	Exports: [decode-markup html-tokenizer load-markup load-html trees markup-as-block list-elements]
 	History: [
 		24-Jul-2017 0.1.0 "Initial Version"
 	]
@@ -30,6 +32,11 @@ Rebol [
 put: func [map [map!] key value][
 	if any-string? key [key: lock copy key]
 	poke map key value
+]
+
+; https://github.com/metaeducation/ren-c/issues/322
+maps-equal?: func [value1 [map!] value2 [map!]][
+	equal? body-of value1 body-of value2
 ]
 
 rgchris.markup: make map! 0
@@ -1949,3 +1956,1113 @@ rgchris.markup/load: make object! [
 
 load-markup: get in rgchris.markup/load 'load-markup
 
+trees: make object! [
+	new: does [
+		make map! [parent _ first _ last _ type document]
+	]
+
+	make-item: func [parent [block! map! blank!]][
+		make map! compose/only [
+			parent (parent) back _ next _ first _ last _
+			type _ name _ namespace _ value _
+		]
+	]
+
+	; new: does [new-line/all/skip copy [parent _ first _ last _ type document] true 2]
+	;
+	; make-item: func [parent [block! map! blank!]][
+	; 	new-line/all/skip compose/only [
+	; 		parent (parent) back _ next _ first _ last _
+	; 		type _ name _ namespace _ value _
+	; 	] true 2
+	; ]
+
+	insert-before: func [item [block! map!] /local new][
+		new: make-item item/parent
+
+		new/back: item/back
+		new/next: item
+
+		either blank? item/back [
+			item/parent/first: new
+		][
+			item/back/next: new
+		]
+
+		item/back: new
+	]
+
+	insert-after: func [item [block! map!] /existing new][
+		new: make-item item/parent
+
+		new/back: item
+		new/next: item/next
+
+		either blank? item/next [
+			item/parent/last: new
+		][
+			item/next/back: new
+		]
+
+		item/next: new
+	]
+
+	insert: func [list [block! map!]][
+		either list/first [
+			insert-before list/first
+		][
+			list/first: list/last: make-item list
+		]
+	]
+
+	append: func [list [block! map!]][
+		either list/last [
+			insert-after list/last
+		][
+			insert list
+		]
+	]
+
+	remove: func [item [block! map!] /back][
+		either item/back [
+			item/back/next: item/next
+		][
+			item/parent/first: item/next
+		]
+
+		either item/next [
+			item/next/back: item/back
+		][
+			item/parent/last: item/back
+		]
+
+		also either back [item/back][item/next]
+		item/parent: item/back: item/next: _ ; node becomes freestanding
+		item
+	]
+
+	clear: func [list [block! map!]][
+		while [list/first][remove list/first]
+	]
+
+	clear-from: func [item [block! map!]][
+		also item/back
+		loop-until [not item: remove item]
+	]
+
+	walk: func [node [block! map!] callback [block!] /into /only][
+		case bind compose/deep [
+			only [
+				node: node/first
+				while [:node][
+					(to group! callback)
+					node: node/next
+				]
+			]
+			/else [
+				(to group! callback)
+				node: node/first
+				while [:node][
+					walk/into node callback
+					node: node/next
+				]
+			]
+		] 'node
+	]
+]
+
+rgchris.markup/markup-as-block: function [node [map! block!]][
+	tags: rgchris.markup/references/tags
+
+	new-line/all/skip collect [
+		switch/default node/type [
+			element [
+				keep any [
+					tags/(node/name)
+					node/name
+				]
+				either any [node/value node/first][
+					keep/only new-line/all/skip collect [
+						if node/value [
+							keep %.attrs
+							keep node/value
+						]
+						kid: node/first
+						while [kid][
+							keep markup-as-block kid
+							kid: kid/next
+						]
+					] true 2
+				][
+					keep _
+				]
+			]
+			document [
+				kid: node/first
+				while [kid][
+					keep markup-as-block kid
+					kid: kid/next
+				]
+			]
+			text [
+				keep %.txt
+				keep node/value
+			]
+			comment [
+				keep %.comment
+				keep to tag! rejoin ["!--" node/value "--"]
+			]
+		][
+			keep _
+			keep to tag! node/type
+		]
+	] true 2
+]
+
+markup-as-block: select rgchris.markup 'markup-as-block
+
+rgchris.markup/load-html: make object! [
+	document: space: head-node: body-node: form-node: parent: kid: last-token: _
+	open-elements: current-node: active-formatting-elements: nodes: node: _
+
+	push: func [node [block! map!]][
+		also current-node: node insert/only open-elements node
+	]
+
+	pop: does [
+		also take open-elements current-node: pick open-elements 1
+	]
+
+	find-element: func [from [block!] element [block! map!]][
+		catch [
+			also _ forall from [
+				case [
+					issue? from/1 [break]
+
+					same? element from/1 [
+						throw from
+					]
+				]
+			]
+		]
+	]
+
+	select-element: func [from [block!] name [word! string!]][
+		catch [
+			also _ foreach node from [
+				case [
+					issue? node [break]
+					node/name = name [throw node]
+				]
+			]
+		]
+	]
+
+	tagify: func [name [word! string!]][
+		any [
+			select rgchris.markup/references/tags name
+			name
+		]
+	]
+
+	append-element: func [token [block!] /to parent [map! block!]][
+		; probe token
+		unless to [parent: :current-node]
+		trees/append parent
+		parent/last/type: 'element
+		parent/last/name: token/2
+		parent/last/value: pick token 3
+		parent/last
+	]
+
+	append-comment: func [token [block!] /to parent [map! block!]][
+		unless to [parent: :current-node]
+		trees/append parent
+		parent/last/type: 'comment
+		parent/last/value: token/2
+		parent/last
+	]
+
+	append-text: func [token [char! string!] /to parent [map! block!]][
+		unless to [parent: :current-node]
+		unless all [
+			parent/last
+			parent/last/type = 'text
+		][
+			trees/append parent
+			parent/last/type: 'text
+			parent/last/value: make string! 0
+		]
+		append parent/last/value token
+	]
+
+	specials: [
+		address applet area article aside base basefont bgsound blockquote body br button
+		caption center col colgroup dd details dir div dl dt embed fieldset figcaption
+		figure footer form frame frameset h1 h2 h3 h4 h5 h6 head header hgroup hr html
+		iframe img input isindex li link listing main marquee meta nav noembed noframes
+		noscript object ol p param plaintext pre script section select source style
+		summary table tbody td template textarea tfoot th thead title tr track ul wbr xmp
+		mi mo mn ms mtext annotation-xml
+		foreignobject desc title
+	]
+
+	formatting: [
+		 a b big code em font i nobr s small strike strong tt u
+	]
+
+	scopes: [
+		default: [
+			applet caption html table td th marquee object
+			mi mo mn ms mtext annotation-xml
+			foreignobject desc title
+		]
+		list-item: [
+			applet caption html table td th marquee object
+			mi mo mn ms mtext annotation-xml
+			foreignobject desc title
+			ul ol
+		]
+		button: [
+			applet caption html table td th marquee object
+			mi mo mn ms mtext annotation-xml
+			foreignobject desc title
+			button
+		]
+		table: [html table]
+		select: [optgroup option]
+	]
+
+	implied-end-tags: [
+		dd dt li option optgroup p rb rp rt rtc
+	]
+
+	find-in-scope: func ['target [word! block! map!] /scope 'scope-name [word!] /local nodes][
+		if word? target [target: reduce [target]]
+
+		unless scope [scope-name: 'default]
+
+		scope: any [
+			select scopes scope-name
+			do make error! rejoin ["Scope not available: " to tag! scope-name]
+		]
+
+		; Red alters series position with FORALL
+		nodes: :open-elements
+
+		catch [
+			also false forall nodes [
+				case [
+					same? target nodes/1 [throw nodes/1]
+					find target nodes/1/name [throw nodes/1]
+					find scope nodes/1/name [break]
+				]
+			]
+		]
+	]
+
+	close-to: func ['name [word!]][
+		while [
+			not-equal? name current-node/name
+		][
+			pop
+		]
+	]
+
+	close-thru: func ['name [word! block!] /quiet][
+		name: compose [(name)]
+		loop-until [
+			; is assumed that NAME exists in the OPEN-ELEMENTS stack
+			to logic! find name select pop 'name
+		]
+		current-node
+	]
+
+	generate-implied-end-tags: func [
+		/thru 'target [word!]
+		/except exceptions [block!]
+	][
+		unless thru [target: []]
+
+		exceptions: compose [
+			(target) (any [:exceptions []])
+		]
+
+		while compose/only [
+			find (exclude implied-end-tags exceptions) current-node/name
+		][
+			pop
+		]
+
+		if thru [
+			unless target = current-node/name [
+				; error
+			]
+			close-thru :target
+		]
+
+		current-node
+	]
+
+	close-para-if-in-scope: func [/local node][
+		if find-in-scope/scope p button [
+			generate-implied-end-tags/thru p
+		]
+	]
+
+	probe-stacks: does [
+		print unspaced [
+			"Open Elements: " mold map-each item open-elements [item/name] newline
+			"Active Formatting: " mold map-each item active-formatting-elements [
+				either issue? item [item][item/name]
+			] newline
+		]
+	]
+
+	reconstruct-formatting-elements: does [
+		unless empty? active-formatting-elements [
+			while [
+				not tail? active-formatting-elements
+			][
+				either any [
+					issue? first active-formatting-elements
+					find-element open-elements first active-formatting-elements
+				][
+					break
+				][
+					active-formatting-elements: next active-formatting-elements
+				]
+			]
+
+			while [
+				not head? active-formatting-elements
+			][
+				active-formatting-elements: back active-formatting-elements
+				change/only active-formatting-elements push append-element reduce [
+					'tag active-formatting-elements/1/name active-formatting-elements/1/value
+				]
+			]
+		]
+	]
+
+	adopt: function [token [block!]][
+		count: formatting-element: element: _
+		name: token/2
+
+		either name = current-node/name [
+			element: pop
+			remove-each [name node] active-formatting-elements [
+				same? element node
+			]
+			element
+		][
+			repeat count 8 [
+				case [
+					not formatting-element: select-element active-formatting-elements name [
+						; do as any other end tag
+						break
+					]
+
+					not position: find-element open-elements formatting-element [
+						; error
+						remove find-element active-formatting-elements formatting-element
+						break
+					]
+
+					not find-in-scope formatting-element [
+						; error
+						break
+					]
+
+					not same? formatting-element current-node [
+						; error
+					]
+
+				]
+
+				tmp: :position
+				furthest-block: _
+
+				while [not head? tmp][
+					tmp: back tmp
+					if find specials tmp/1/name [
+						further-block: tmp/1
+					]
+				]
+
+				unless furthest-block [
+					loop-until [
+						same? formatting-element pop
+					]
+					remove find-element active-formatting-elements formatting-element
+					break
+				]
+
+				common-ancestor: 
+				bookmark: find-element active-formatting-elements formatting-element
+
+				node: last-node: furthest-block
+				inner-count: 0
+				loop [
+					++ inner-count
+					
+				]
+			]
+		]
+	]
+
+	states: [
+		initial: [
+			space []
+			doctype [
+				document/name: token/2
+				document/public: token/3
+				document/system: token/4
+				use before-html
+			]
+			tag end-tag text end [
+				; error
+				use before-html
+				do-token token
+			]
+			comment [append-comment token]
+		]
+
+		before-html: [
+			space []
+			doctype [
+				; error
+			]
+			tag [
+				switch/default tagify token/2 [
+					<html> [
+						push append-element/to token document
+						use before-head
+					]
+				][
+					do-else token
+				]
+			]
+			end-tag [
+				switch tagify token/2 [
+					<head> <body> <html> <br> [
+						do-else token
+					]
+				]
+			]
+			text end else [
+				push append-element/to [tag html] document
+				use before-head
+				do-token token
+			]
+			comment [append-comment token]
+		]
+
+		before-head: [
+			space []
+			doctype [
+				; error
+			]
+			tag [
+				switch/default tagify token/2 [
+					<html> [
+						do-token/in token in-body
+					]
+					<head> [
+						document/head: push append-element token
+						use in-head
+					]
+				][
+					do-else token
+				]
+			]
+			end-tag [
+				switch/default tagify token/2 [
+					<head> <body> <html> <br> [
+						do-else token
+					]
+				][
+					; error
+				]
+			]
+			text end else [
+				document/head: push append-element [tag head]
+				use in-head
+				do-token token
+			]
+			comment [append-comment token]
+		]
+
+		in-head: [
+			space [
+				append-text token
+			]
+			doctype [
+				; error
+			]
+			tag [
+				switch/default tagify token/2 [
+					<html> [
+						do-token/in token in-body
+					]
+					<base> <basefont> <bgsound> <link> <meta> [
+						append-element token
+					]
+					<title> [
+						push append-element token
+						html-tokenizer/use/until rcdata form token/2
+						use/return text
+					]
+					<noframes> <style> [
+						push append-element token
+						html-tokenizer/use/until rawtext form token/2
+						use/return text
+					]
+					<noscript> [ ; scripting flag is false
+						push append-element token
+						use in-head-noscript
+					]
+					<script> [
+						push append-element token
+						html-tokenizer/use/until script-data form token/2
+						use/return text
+					]
+					<head> [
+						; error
+					]
+				][
+					do-else token
+				]
+			]
+			end-tag [
+				switch/default tagify token/2 [
+					<head> [
+						pop
+						use after-head
+					]
+					<body> <html> <br> [
+						do-else token
+					]
+				][
+					; error
+				]
+			]
+			text end else [
+				pop
+				use after-head
+				do-token token
+			]
+			comment [append-comment token]
+		]
+
+		in-head-noscript: [
+			space [
+				do-token/in token in-head
+			]
+			doctype [
+				; error
+			]
+			tag [
+				switch/default tagify token/2 [
+					<html> [
+						do-token/in token in-body
+					]
+					<basefont> <bgsound> <link> <meta> <noframes> <style> [
+						do-token/in token in-head
+					]
+					<head> <noscript> [
+						; error
+					]
+				][
+					do-else token
+				]
+			]
+			end-tag [
+				switch/default token/2 [
+					<noscript> [
+						pop
+						use in-head
+					]
+					<br> [
+						do-else token
+					]
+				][
+					; error
+				]
+			]
+			text end else [
+				; error
+				node: node/parent
+				use in-head
+				do-token token
+			]
+			comment [do-token/in token in-head]
+		]
+
+		after-head: [
+			space [append-text token]
+			doctype [
+				; error
+			]
+			tag [
+				switch/default tagify token/2 [
+					<html> [
+						do-token/in token in-body
+					]
+					<body> [
+						document/body: push append-element token
+						use in-body
+					]
+					<frameset> [
+						push append-element token
+						use in-frameset
+					]
+					<base <basefont> <bgsound> <link> <meta> <noframes>
+					<script> <style> <template> <title> [
+						; error
+						append-element/to token document/head
+					]
+					<head> [
+						; error
+					]
+				][
+					do-else token
+				]
+			]
+			end-tag [
+				switch/default tagify token/2 [
+					<body> <html> <br> [
+						do-else token
+					]
+				][
+					; error
+				]
+			]
+			text end else [
+				document/body: push append-element [tag body]
+				use in-body
+				do-token token
+			]
+			comment [append-comment token]
+		]
+
+		in-body: [
+			space text [
+				reconstruct-formatting-elements
+				append-text token
+			]
+			doctype [
+				; error
+			]
+			tag [
+				if string? token/2 [probe token]
+				switch/default tagify token/2 [
+					<html> [
+						; error
+						; check attributes
+					]
+					<base> <basefont> <bgsound> <link> <meta> <noframes>
+					<script> <style> <template> <title> [
+						; error
+						do-token/in token in-head
+					]
+					<body> [
+						; error
+						; check attributes
+					]
+					<frameset> [
+						; error
+						; handle frameset
+					]
+					<address> <article> <aside> <blockquote> <center> <details> <dialog>
+					<dir> <div> <dl> <fieldset> <figcaption> <figure> <footer> <header>
+					<hgroup> <main> <nav> <ol> <p> <section> <summary> <ul> [
+						close-para-if-in-scope
+						push append-element token
+					]
+					<h1> <h2> <h3> <h4> <h5> <h6> [
+						close-para-if-in-scope
+						if find [h1 h2 h3 h4 h5 h6] current-node/name [
+							; error
+							pop
+						]
+						push append-element token
+					]
+					<pre> <listing> [
+						close-para-if-in-scope
+						push append-element token
+					]
+					<form> [
+						either document/form [
+							; error
+						][
+							close-para-if-in-scope
+							document/form: push append-element token
+						]
+					]
+					<li> [
+						nodes: :open-elements
+						forall nodes [
+							node: pick nodes 1
+							case [
+								node/name = 'li [
+									generate-implied-end-tags/thru li
+									break
+								]
+
+								find exclude specials [address div p] node/name [
+									break
+								]
+							]
+						]
+						close-para-if-in-scope
+						push append-element token
+					]
+					<dd> <dt> [
+						foreach node open-elements [
+							case [
+								node/name = 'dd [
+									generate-implied-end-tags/thru dd
+									break
+								]
+
+								node/name = 'dt [
+									generate-implied-end-tags/thru dt
+									break
+								]
+
+								find exclude specials [address div p] node/name [
+									break
+								]
+							]
+						]
+						close-para-if-in-scope
+						push append-element token
+					]
+					<plaintext> [
+						close-para-if-in-scope
+						html-tokenizer/use plaintext
+						push append-element token
+					]
+					<button> [
+						if find-in-scope button [
+							; error
+							close-thru button
+						]
+						reconstruct-formatting-elements
+						push append-element token
+					]
+					<a> [
+						if select-element open-elements 'a [
+							; error
+							do-token [end-tag a]
+						]
+						reconstruct-formatting-elements
+						insert/only active-formatting-elements push append-element token
+					]
+					<nobr> [
+						reconstruct-formatting-elements
+						if find-in-scope nobr [
+							; error
+							do-token [end-tag nobr]
+							reconstruct-formatting-elements
+						]
+						insert/only active-formatting-elements push append-element token
+					]
+					<b> <big> <code> <em> <font> <i> <s> <small> <strike> <strong> <tt> <u> [
+						reconstruct-formatting-elements
+						insert/only active-formatting-elements push append-element token
+					]
+
+					<input> [
+						reconstruct-formatting-elements
+						append-element token
+					]
+					<param> <source> <track> [
+						append-element token
+					]
+					<hr> [
+						close-para-if-in-scope
+						append-element token
+					]
+					<image> [
+						; error
+						token/2: 'img
+						do-token token
+					]
+
+					<textarea> [
+						push append-element token
+						html-tokenizer/use/until rcdata form token/2
+						use/return text
+					]
+				][
+					reconstruct-formatting-elements
+					push append-element token
+				]
+			]
+			end-tag [
+				switch/default tagify token/2 [
+					<body> [
+						; error if a tag is open other than
+						; --list of tags--
+						use after-body
+					]
+					<html> [
+						; error if a tag is open other than
+						; --list of tags--
+						use after-body
+						do-token token
+					]
+					<address> <article> <aside> <blockquote> <button> <center> <details>
+					<dialog> <dir> <div> <dl> <fieldset> <figcaption> <figure> <footer>
+					<header> <hgroup> <listing> <main> <nav> <ol> <pre> <section> <summary>
+					<ul> [
+						either find-in-scope :token/2 [
+							close-thru :token/2
+						][
+							; error
+						]
+					]
+					<form> [
+						node: document/form
+						document/form: _
+						case [
+							blank? node [
+								; error
+							]
+
+							not same? node find-in-scope form [
+								; error
+							]
+
+							(
+								generate-implied-end-tags
+								same? node current-node
+							) [
+								pop
+							]
+
+							/else [
+								; error
+								if node: find-element open-elements node [
+									remove node
+								]
+							]
+						]
+					]
+					<p> [
+						unless find-in-scope/scope p button [
+							push append-element [tag p]
+						]
+						close-para-if-in-scope
+					]
+					<li> [
+						either find-in-scope/scope li list-item [
+							close-thru li
+						][
+							; error
+						]
+					]
+					<dd> <dt> [
+						either find-in-scope :token/2 [
+							close-thru :token/2
+						][
+							; error
+						]
+					]
+					<h1> <h2> <h3> <h4> <h5> <h6> [
+						either find-in-scope [h1 h2 h3 h4 h5 h6] [
+							generate-implied-end-tags
+							unless token/2 = current-node/name [
+								; error
+							]
+							close-thru [h1 h2 h3 h4 h5 h6]
+						][
+							; error
+						]
+					]
+
+					<a> <b> <big> <code> <em> <font> <i> <nobr> <s> <small> <strike> <strong>
+					<tt> <u> [
+						either equal? token/2 current-node/name [
+							also node: pop
+							remove-each element active-formatting-elements [
+								same? element node
+							]
+						][
+							print reform ["Adopt Me" mold token]
+							; adopt token
+
+							; temp
+							foreach node open-elements [
+								case [
+									token/2 = node/name [
+										generate-implied-end-tags/thru :token/2
+										remove-each element active-formatting-elements [
+											same? element node
+										]
+										break
+									]
+									find specials node/name [
+										; error
+										break
+									]
+								]
+							]
+							; /temp
+						]
+					]
+				][
+					foreach node open-elements [
+						case [
+							token/2 = node/name [
+								generate-implied-end-tags/thru :token/2
+								break
+							]
+							find specials node/name [
+								; error
+								break
+							]
+						]
+					]
+				]
+			]
+			end [
+				; error if a tag is open other than:
+				; dd dt li p tbody td tfoot th thead tr body html
+			]
+			else []
+			comment [append-comment token]
+		]
+
+		text [
+			space text [append-text token]
+
+			end-tag [
+				; possible alt <script> handler here
+				pop
+				use :return-state
+				return-state: _
+			]
+
+			end [
+				use :return-state
+				return-state: _
+			]
+
+			comment [append-comment token]
+		]
+
+		in-table []
+
+		in-table text []
+
+		in-caption []
+
+		in-column group []
+
+		in-table body []
+
+		in-row []
+
+		in-cell []
+
+		in-select []
+
+		in-select-in-table []
+
+		after-body []
+
+		in-frameset []
+
+		after-frameset []
+
+		after-after-body []
+
+		after-after-frameset []
+	]
+
+	this-state-name: this-state: operative-state: return-state: state: last-state-name: token: _
+
+	use: func ['target [word!] /return][
+		last-state-name: :this-state-name
+		if return [return-state: :this-state-name]
+		this-state-name: target
+		; probe to tag! target
+		; probe token
+		state: this-state: any [
+			select states :target
+			do make error! rejoin ["No Such State: " uppercase form target]
+		]
+	]
+
+	do-token: func [token [block! char! string!] /in 'other [word!]][
+		if in [
+			either find states other [
+				other: select states other
+			][
+				do make error! rejoin ["No such state: " to tag! uppercase form other]
+			]
+		]
+
+		operative-state: any [:other state]
+
+		current-node: pick open-elements 1
+
+		also _ switch case [
+			char? token ['space]
+			any [string? token char? token]['text]
+			block? token [token/1]
+		] operative-state
+	]
+
+	do-else: func [token [block! char! string!]][
+		also _ switch 'else operative-state
+	]
+
+	load-html: func [source [string!]][
+		open-elements: make block! 12
+		active-formatting-elements: make block! 6
+		last-token: _
+		document: trees/new
+		document/head: document/body: document/form: _
+
+		this-state-name: this-state: return-state: state: last-state-name: _
+
+		use initial
+
+		html-tokenizer/init source ; ->
+		func [current [block! char! string!]][
+			do-token token: :current
+		] ; ->
+		func [value][value]
+
+		html-tokenizer/start
+
+		document
+	]
+]
+
+load-html: get in rgchris.markup/load-html 'load-html
+
+list-elements: function [node [map! block!]][
+	tags: rgchris.markup/references/tags
+	print "LIST ELEMENTS:"
+	trees/walk node [
+		this: :node
+		print to path! reverse collect [
+			while [this/type <> 'document][
+				keep either this/type = 'element [
+					this/name
+				][
+					any [
+						tags/(this/type)
+						this/type
+					]
+				]
+				this: this/parent
+			]
+		]
+	]
+]
