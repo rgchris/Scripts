@@ -1,4 +1,6 @@
-Red []
+Red [
+	Title: "Markup Codec"
+]
 
 #macro ['| 'and] func [s e][[| ahead]]
 #macro _: func [][none]
@@ -26,15 +28,16 @@ Rebol [
 	Title: "Markup Codec"
 	Author: "Christopher Ross-Gill"
 	Date: 24-Jul-2017
-	; Home: 
+	Home: http://ross-gill.com/page/HTML_and_Rebol
 	File: %markup.reb
-	Version: 0.1.1
-	Purpose: "Markup Loader/Saver for Ren-C"
+	Version: 0.2.0
+	Purpose: "Markup Loader for Ren-C and Red"
 	Rights: http://opensource.org/licenses/Apache-2.0
 	Type: module
 	Name: rgchris.markup
 	Exports: [decode-markup html-tokenizer load-markup load-html trees markup-as-block list-elements]
 	History: [
+		21-Aug-2017 0.2.0 "Working Tree Creation (with caveats)"
 		24-Jul-2017 0.1.0 "Initial Version"
 	]
 ]
@@ -139,7 +142,7 @@ rgchris.markup/references: make object! [ ; need to update references
 	]
 
 	elements: make map! lock [
-		"a" a "address" address "applet" applet "area" area "article" article
+		"a" a "abbr" abbr "address" address "applet" applet "area" area "article" article
 		"aside" aside "b" b "base" base "basefont" basefont "bgsound" bgsound
 		"big" big "blockquote" blockquote "body" body "br" br "button" button
 		"caption" caption "center" center "code" code "col" col "colgroup" colgroup
@@ -159,7 +162,7 @@ rgchris.markup/references: make object! [ ; need to update references
 		"span" span "strike" strike "strong" strong "style" style "sub" sub
 		"summary" summary "sup" sup "svg" svg "table" table "tbody" tbody
 		"td" td "template" template "textarea" textarea "tfoot" tfoot "th" th
-		"thead" thead "title" title "tr" tr "track" track "tt" tt
+		"thead" thead "time" time "title" title "tr" tr "track" track "tt" tt
 		"u" u "ul" ul "var" var "wbr" wbr "xmp" xmp
 
 		; SVG
@@ -2078,7 +2081,7 @@ rgchris.markup/markup-as-block: function [node [map! block!]][
 		switch/default node/type [
 			element [
 				keep any [
-					tags/(node/name)
+					select tags node/name
 					node/name
 				]
 				either any [node/value node/first][
@@ -2459,7 +2462,7 @@ rgchris.markup/load-html: make object! [
 		]
 	]
 
-	close-thru: func ['name [word! block!] /quiet][
+	close-thru: func ['name [word! string! block!] /quiet][
 		name: compose [(name)]
 		loop-until [
 			; is assumed that NAME exists in the OPEN-ELEMENTS stack
@@ -2469,7 +2472,7 @@ rgchris.markup/load-html: make object! [
 	]
 
 	generate-implied-end-tags: func [
-		/thru 'target [word! block!]
+		/thru 'target [word! string! block!]
 		/except exceptions [block!]
 	][
 		target: compose [(any [:target []])]
@@ -3173,7 +3176,7 @@ rgchris.markup/load-html: make object! [
 				]
 			]
 			</h1> </h2> </h3> </h4> </h5> </h6> [
-				either find-in-scope header-elements [
+				either find-in-scope :header-elements [
 					generate-implied-end-tags
 					unless token/2 = current-node/name [
 						; error
