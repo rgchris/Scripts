@@ -1963,7 +1963,7 @@ trees: make object! [
 	; 	] true 2
 	; ]
 
-	insert-before: func [item [block! map!] /existing node][
+	insert-before: func [item [block! map!] /local node][
 		node: make-item item/parent
 
 		node/back: item/back
@@ -1978,7 +1978,7 @@ trees: make object! [
 		item/back: node
 	]
 
-	insert-after: func [item [block! map!] /existing node][
+	insert-after: func [item [block! map!] /local node][
 		node: make-item item/parent
 
 		node/back: item
@@ -2006,6 +2006,20 @@ trees: make object! [
 			insert-after list/last
 		][
 			insert list
+		]
+	]
+
+	append-existing: func [list [block! map!] node [block! map!]][
+		node/parent: list
+		node/next: _
+
+		either blank? list/last [
+			node/back: _
+			list/first: list/last: node
+		][
+			node/back: list/last
+			node/back/next: node
+			list/last: node
 		]
 	]
 
@@ -2126,7 +2140,7 @@ rgchris.markup/load-html: make object! [
 	]
 
 	formatting: [
-		 a b big code em font i nobr s small strike strong tt u
+		a b big code em font i nobr s small strike strong tt u
 	]
 
 	scopes: [
@@ -2393,10 +2407,12 @@ rgchris.markup/load-html: make object! [
 		]
 	]
 
-	find-in-scope: func ['target [word! block! map!] /scope 'scope-name [word!] /local mark][
-		if word? target [target: reduce [target]]
+	find-in-scope: func ['target [word! block!] /scope 'scope-name [word!] /local mark][
+		if word? :target [target: reduce [target]]
 
-		unless scope [scope-name: 'default]
+		unless word? :scope-name [
+			scope-name: 'default
+		]
 
 		scope: any [
 			select scopes scope-name
@@ -2409,8 +2425,34 @@ rgchris.markup/load-html: make object! [
 		catch [
 			also false forall mark [
 				case [
-					same? target mark/1 [throw mark/1]
 					find target mark/1/name [throw mark/1]
+					find scope mark/1/name [break]
+				]
+			]
+		]
+	]
+
+	find-element-in-scope: func [
+		element [block! map!]
+		/scope 'scope-name [word!]
+		/local mark
+	][
+		unless word? :scope-name [
+			scope-name: 'default
+		]
+
+		scope: any [
+			select scopes scope-name
+			do make error! rejoin ["Scope not available: " to tag! scope-name]
+		]
+
+		; Red alters series position with FORALL
+		mark: :open-elements
+
+		catch [
+			also false forall mark [
+				case [
+					same? element mark/1 [throw mark]
 					find scope mark/1/name [break]
 				]
 			]
@@ -2495,58 +2537,53 @@ rgchris.markup/load-html: make object! [
 
 	adopt: func [
 		token [block!]
-		/local formatting-element element clone
+		/local formatting-element element clone subject count
 		common-ancestor bookmark node last-node position mark furthest-block
 	][
-		name: token/2
+		subject: token/2
 
 		either all [
-			name = current-node/name
+			equal? current-node/name subject
 			not find-element active-formatting-elements current-node
 		][
-			pop-formatting element: pop-element
+			pop-element
 		][
 			loop 8 [
+				formatting-element: select-element active-formatting-elements :subject
+
 				case [
-					any [
-						not formatting-element: select-element active-formatting-elements :name
-						all [
-							find-element open-elements formatting-element
-							not find-in-scope :formatting-element/name
-						]
-					][
+					not formatting-element [
 						close-element token
 						break
 					]
 
-					not position: find-element open-elements formatting-element [
+					not find-element open-elements formatting-element [
 						report 'adoption-agency-1.2
-						remove find-element active-formatting-elements formatting-element
+						pop-formatting formatting-element
 						break
 					]
 
-					not find-in-scope :formatting-element/name [
+					not find-element-in-scope formatting-element [
 						report 'adoption-agency-4.4
 						break
 					]
 
-					/else [
+					not same? current-node formatting-element [
 						report 'adoption-agency-1.3
 					]
 				]
 
-				mark: :position
-				furthest-block: _
+				mark: find-element copy open-elements formatting-element
+				common-ancestor: first next mark
 
-				while [not head? mark][
-					index: back mark
-					if find specials mark/1/name [
-						furthest-block: mark/1
-						break
+				unless furthest-block: catch [
+					also _ while [not head? mark][
+						mark: back mark
+						if find specials mark/1/name [
+							throw mark/1
+						]
 					]
-				]
-
-				unless furthest-block [
+				][
 					loop-until [
 						same? formatting-element pop-element
 					]
@@ -2554,51 +2591,74 @@ rgchris.markup/load-html: make object! [
 					break
 				]
 
-				common-ancestor: first next position
 				bookmark: find-element active-formatting-elements formatting-element
 				node: last-node: furthest-block
-				mark: next mark
+				count: 0
 
-				loop 3 [
-					node: mark/1
-					unless find-element active-formatting-elements [
-						remove mark
-						continue
+				forever [
+					++ count
+
+					node: first mark: next mark
+
+					case/all [
+						same? formatting-element node [
+							break
+						]
+
+						all [
+							count > 3
+							find-element active-formatting-elements node
+						][
+							pop-formatting node
+						]
+
+						not find-element active-formatting-elements node [
+							remove find-element open-elements node
+							continue
+						]
 					]
-					if same? node formatting-element [
-						break
-					]
-					if same? last-node furthest-block [
-						bookmark: back find-element active-formatting-elements node
-					]
-					clone: copy node
-					clone/parent: clone/next: clone/back: _
-					; clone/first: clone/last: _
-					if clone/value [clone/value: copy clone/value]
+
+					clone: trees/make-item common-ancestor
+					clone/type: 'element
+					clone/name: node/name
+					clone/value: node/value
 
 					change/only find-element open-elements node clone
 					change/only find-element active-formatting-elements node clone
 
 					node: :clone
 
-					if last-node/parent [
-						trees/remove last-node
+					if same? furthest-block last-node [
+						bookmark: find-element active-formatting-elements clone
 					]
 
-					trees/append/existing node last-node
+					trees/append-existing node trees/remove last-node
 
 					last-node: :node
 				]
 
-				if last-node/parent [
-					trees/remove last-node
+				override-target: :common-ancestor
+				set-insertion-point
+				trees/append-existing insertion-point last-node
+
+				clone: trees/make-item furthest-block
+				clone/type: 'element
+				clone/name: formatting-element/name
+				clone/value: formatting-element/value
+
+				while [furthest-block/first][
+					trees/append-existing clone trees/remove furthest-block/first
 				]
 
-				either find [table tbody tfoot thead tr] common-ancestor/name [
-					
-				][
-					trees/append/existing common-ancestor last-node
-				]
+				trees/append-existing furthest-block clone
+
+				pop-formatting formatting-element
+				insert/only bookmark clone
+
+				remove find-element open-elements formatting-element
+				insert/only find-element open-elements furthest-block clone
+
+				current-node: first open-elements
 			]
 		]
 	]
@@ -3131,12 +3191,7 @@ rgchris.markup/load-html: make object! [
 						same? element node
 					]
 				][
-					print ["Adopt Me" mold token]
-					; adopt token
-
-					; temp--is quite limited.
-					close-element token
-					; /temp
+					adopt token
 				]
 			]
 			</applet> </marquee> </object> [
@@ -3163,6 +3218,7 @@ rgchris.markup/load-html: make object! [
 						break
 					]
 				]
+				finish-up
 			]
 			comment [append-comment token]
 		]
@@ -3170,19 +3226,16 @@ rgchris.markup/load-html: make object! [
 		text: [
 			"In Text"
 			space text [append-text token]
-
 			end-tag [
 				; possible alt <script> handler here
 				pop-element
 				use :return-state
 				return-state: _
 			]
-
 			end [
 				use :return-state
 				return-state: _
 			]
-
 			comment [append-comment token]
 		]
 
@@ -3288,7 +3341,6 @@ rgchris.markup/load-html: make object! [
 			space text [
 				append pending-table-characters token
 			]
-
 			doctype tag end-tag comment end [
 				either find next pending-table-characters string! [
 					report 'needs-fostering
