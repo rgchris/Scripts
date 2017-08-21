@@ -11,6 +11,7 @@ Red []
 #macro lock: func [][func [val][val]]
 #macro unspaced: func []['rejoin]
 #macro spaced: func []['reform]
+#macro offset-of: func []['offset?]
 #macro [quote put: 'func block! block!] func [s e][none]
 
 ++: func ['word [word!]][
@@ -1692,7 +1693,7 @@ rgchris.markup/html-tokenizer: make object! [
 			|
 			#">" error (
 				use data
-				report "System identifier missing"
+				report 'system-identifier-missing
 				token/5: 'force-quirks
 				emit also token token: _
 			)
@@ -1806,15 +1807,15 @@ rgchris.markup/html-tokenizer: make object! [
 		]
 	]
 
-	this-state-name: this-state: state: last-state-name: _
+	current-state-name: current-state: state: last-state-name: _
 
 	use: func ['target [word!] /until end-tag [string!]][
-		last-state-name: :this-state-name
-		this-state-name: target
+		last-state-name: :current-state-name
+		current-state-name: target
 		if until [closer: :end-tag]
 		; probe to tag! target
 		; probe copy/part series 10
-		state: this-state: any [
+		state: current-state: any [
 			select states :target
 			do make error! rejoin ["No Such State: " uppercase form target]
 		]
@@ -1842,7 +1843,7 @@ rgchris.markup/html-tokenizer: make object! [
 		error-handler [function!] "A function to handle errors"
 	][
 		mark: buffer: attribute: token: last-token: character: additional-character: _
-		this-state-name: this-state: state: last-state-name: _
+		current-state-name: current-state: state: last-state-name: _
 		is-paused: is-done: false
 		series: :source
 		emit: :token-handler
@@ -1874,7 +1875,7 @@ rgchris.markup/html-tokenizer: make object! [
 			do make error! "Tokenization process has not been initialized"
 		]
 		is-paused: false
-		state: :this-state
+		state: :current-state
 		parse/case series rule
 	]
 ]
@@ -2494,8 +2495,8 @@ rgchris.markup/load-html: make object! [
 
 	adopt: func [
 		token [block!]
-		/local count formatting-element element
-		common-ancestor bookmark node last-node position mark furthest-block inner-count
+		/local formatting-element element clone
+		common-ancestor bookmark node last-node position mark furthest-block
 	][
 		name: token/2
 
@@ -2505,26 +2506,32 @@ rgchris.markup/load-html: make object! [
 		][
 			pop-formatting element: pop-element
 		][
-			repeat count 8 [
+			loop 8 [
 				case [
-					not formatting-element: select-element active-formatting-elements :name [
+					any [
+						not formatting-element: select-element active-formatting-elements :name
+						all [
+							find-element open-elements formatting-element
+							not find-in-scope :formatting-element/name
+						]
+					][
 						close-element token
 						break
 					]
 
 					not position: find-element open-elements formatting-element [
-						; error
+						report 'adoption-agency-1.2
 						remove find-element active-formatting-elements formatting-element
 						break
 					]
 
-					not find-in-scope formatting-element [
-						; error
+					not find-in-scope :formatting-element/name [
+						report 'adoption-agency-4.4
 						break
 					]
 
-					not same? formatting-element current-node [
-						; error
+					/else [
+						report 'adoption-agency-1.3
 					]
 				]
 
@@ -2532,9 +2539,10 @@ rgchris.markup/load-html: make object! [
 				furthest-block: _
 
 				while [not head? mark][
-					mark: back mark
+					index: back mark
 					if find specials mark/1/name [
 						furthest-block: mark/1
+						break
 					]
 				]
 
@@ -2549,22 +2557,47 @@ rgchris.markup/load-html: make object! [
 				common-ancestor: first next position
 				bookmark: find-element active-formatting-elements formatting-element
 				node: last-node: furthest-block
+				mark: next mark
 
-				inner-count: 0
-				forever [
-					++ inner-count
-					node: either same? node mark/1 [mark/2][mark/1]
-					if same? node formatting-element [break]
-					if all [
-						inner-count > 3
-						find-element active-formatting-elements node
-					][
-						pop-formatting node
-					]
-					unless find-element active-formatting-elements node [
-						; remove NODE from open elements
+				loop 3 [
+					node: mark/1
+					unless find-element active-formatting-elements [
+						remove mark
 						continue
 					]
+					if same? node formatting-element [
+						break
+					]
+					if same? last-node furthest-block [
+						bookmark: back find-element active-formatting-elements node
+					]
+					clone: copy node
+					clone/parent: clone/next: clone/back: _
+					; clone/first: clone/last: _
+					if clone/value [clone/value: copy clone/value]
+
+					change/only find-element open-elements node clone
+					change/only find-element active-formatting-elements node clone
+
+					node: :clone
+
+					if last-node/parent [
+						trees/remove last-node
+					]
+
+					trees/append/existing node last-node
+
+					last-node: :node
+				]
+
+				if last-node/parent [
+					trees/remove last-node
+				]
+
+				either find [table tbody tfoot thead tr] common-ancestor/name [
+					
+				][
+					trees/append/existing common-ancestor last-node
 				]
 			]
 		]
@@ -2593,6 +2626,7 @@ rgchris.markup/load-html: make object! [
 
 	states: [
 		initial: [
+			"Initial"
 			space []
 			doctype [
 				document/name: token/2
@@ -2600,7 +2634,7 @@ rgchris.markup/load-html: make object! [
 				document/system: token/4
 				use before-html
 			]
-			tag /tag text end [
+			tag end-tag text end [
 				; error
 				use before-html
 				do-token token
@@ -2609,6 +2643,7 @@ rgchris.markup/load-html: make object! [
 		]
 
 		before-html: [
+			"Before HTML"
 			space []
 			doctype [
 				report 'unexpected-doctype
@@ -2626,6 +2661,7 @@ rgchris.markup/load-html: make object! [
 		]
 
 		before-head: [
+			"Before Head"
 			space []
 			doctype [
 				report 'unexpected-doctype
@@ -2642,18 +2678,19 @@ rgchris.markup/load-html: make object! [
 				use in-head
 				do-token token
 			]
-			/tag [
+			end-tag [
 				; error
 			]
 			comment [append-comment token]
 		]
 
 		in-head: [
+			"In Head"
 			space [
 				append-text token
 			]
 			doctype [
-				; error
+				report 'unexpected-doctype
 			]
 			<html> [
 				do-token/in token in-body
@@ -2692,13 +2729,14 @@ rgchris.markup/load-html: make object! [
 				use after-head
 				do-token token
 			]
-			/tag [
+			end-tag [
 				; error
 			]
 			comment [append-comment token]
 		]
 
 		in-head-noscript: [
+			"In Head (NoScript)"
 			space [
 				do-token/in token in-head
 			]
@@ -2724,13 +2762,14 @@ rgchris.markup/load-html: make object! [
 				use in-head
 				do-token token
 			]
-			/tag [
+			end-tag [
 				; error
 			]
 			comment [do-token/in token in-head]
 		]
 
 		after-head: [
+			"After Head"
 			space [append-text token]
 			doctype [
 				; error
@@ -2761,13 +2800,14 @@ rgchris.markup/load-html: make object! [
 				use in-body
 				do-token token
 			]
-			/tag [
+			end-tag [
 				; error
 			]
 			comment [append-comment token]
 		]
 
 		in-body: [
+			"In Body"
 			space text [
 				reconstruct-formatting-elements
 				append-text token
@@ -2951,7 +2991,7 @@ rgchris.markup/load-html: make object! [
 			<select> [
 				reconstruct-formatting-elements
 				push append-element token
-				either find [in-table in-caption in-table-body in-row in-cell] this-state-name [
+				either find [in-table in-caption in-table-body in-row in-cell] current-state-name [
 					use in-select-in-table
 				][
 					use in-select
@@ -3113,7 +3153,7 @@ rgchris.markup/load-html: make object! [
 				reconstruct-formatting-elements
 				push append-element token
 			]
-			/tag [
+			end-tag [
 				close-element token
 			]
 			end [
@@ -3128,9 +3168,10 @@ rgchris.markup/load-html: make object! [
 		]
 
 		text: [
+			"In Text"
 			space text [append-text token]
 
-			/tag [
+			end-tag [
 				; possible alt <script> handler here
 				pop-element
 				use :return-state
@@ -3146,11 +3187,14 @@ rgchris.markup/load-html: make object! [
 		]
 
 		in-table: [
+			"In Table"
 			space text [
-				if find [table tbody tfoot thead tr] current-node/name [
+				either find [table tbody tfoot thead tr] current-node/name [
 					insert pending-table-characters: make block! 4 ""
 					use/return in-table-text
 					do-token token
+				][
+					do-else token
 				]
 			]
 			doctype [
@@ -3185,7 +3229,7 @@ rgchris.markup/load-html: make object! [
 				do-token token
 			]
 			<table> [
-				; error
+				report 'table-in-table
 				if find-in-scope/scope table table [
 					close-thru table
 					reset-insertion-mode
@@ -3218,7 +3262,7 @@ rgchris.markup/load-html: make object! [
 					close-thru table
 					reset-insertion-mode
 				][
-					; error
+					report 'no-table-in-scope
 				]
 			]
 			</body> </caption> </col> </colgroup> </html> </tbody> </td> </tfoot> </th> </thead> </tr> [
@@ -3230,7 +3274,7 @@ rgchris.markup/load-html: make object! [
 			end [
 				do-token/in token in-body
 			]
-			tag /tag else [
+			tag end-tag else [
 				; error
 				fostering?: on
 				do-token/in token in-body
@@ -3240,14 +3284,15 @@ rgchris.markup/load-html: make object! [
 		]
 
 		in-table-text: [
+			"In Table Text"
 			space text [
 				append pending-table-characters token
 			]
 
-			doctype tag /tag comment end [
+			doctype tag end-tag comment end [
 				either find next pending-table-characters string! [
-					; error
-					do-else/in rejoin pending-table-characters in-table
+					report 'needs-fostering
+					do-else/in probe rejoin pending-table-characters in-table
 					pending-table-characters: _
 					use :return-state
 					do-token token
@@ -3260,6 +3305,7 @@ rgchris.markup/load-html: make object! [
 		]
 
 		in-caption: [
+			"In Caption"
 			<caption> <col> <colgroup> <tbody> <td> <tfoot> <th> <thead> <tr>
 			</table> [
 				either find-in-scope/scope caption table [
@@ -3283,12 +3329,13 @@ rgchris.markup/load-html: make object! [
 			</body> </col> </colgroup> </html> </tbody> </td> </tfoot> </th> </thead> </tr> [
 				; error
 			]
-			space text doctype tag /tag comment end [
+			space text doctype tag end-tag comment end [
 				do-token/in token in-body
 			]
 		]
 
 		in-column-group: [
+			"In Column Group"
 			space [
 				append-text token
 			]
@@ -3316,11 +3363,12 @@ rgchris.markup/load-html: make object! [
 			<template> </template> [
 				do-token/in token in-head
 			]
-			text tag /tag []
+			text tag end-tag []
 			comment [append-comment token]
 		]
 
 		in-table-body: [
+			"In Table Body"
 			<tr> [
 				clear-stack-to-table/body
 				push append-element token
@@ -3356,12 +3404,13 @@ rgchris.markup/load-html: make object! [
 			</body> </caption> </col> </colgroup> </html> </td> </th> </tr> [
 				; error
 			]
-			space text doctype tag /tag comment end [
+			space text doctype tag end-tag comment end [
 				do-token/in token in-table
 			]
 		]
 
 		in-row: [
+			"In Table Row"
 			<th> <td> [
 				clear-stack-to-table/row
 				push append-element token
@@ -3405,12 +3454,13 @@ rgchris.markup/load-html: make object! [
 			</body> </caption> </col> </colgroup> </html> </td> </th> [
 				; error
 			]
-			space text doctype tag /tag comment end [
+			space text doctype tag end-tag comment end [
 				do-token/in token in-table
 			]
 		]
 
 		in-cell: [
+			"In Table Cell"
 			</td> </th> [
 				either find-in-scope/scope :token/2 table [
 					generate-implied-end-tags/thru [td th]
@@ -3443,12 +3493,13 @@ rgchris.markup/load-html: make object! [
 					; error
 				]
 			]
-			space text doctype tag /tag comment end [
+			space text doctype tag end-tag comment end [
 				do-token/in token in-body
 			]
 		]
 
 		in-select: [
+			"In Select"
 			space text [
 				append-text token
 			]
@@ -3519,13 +3570,14 @@ rgchris.markup/load-html: make object! [
 			end [
 				do-token/in token in-body
 			]
-			tag /tag [
+			tag end-tag [
 				; error
 			]
 			comment [append-comment token]
 		]
 
 		in-select-in-table: [
+			"In Select (In Table)"
 			<caption> <table> <tbody> <tfoot> <thead> <tr> <td> <th> [
 				; error
 				close-thru select
@@ -3540,12 +3592,13 @@ rgchris.markup/load-html: make object! [
 					do-token token
 				]
 			]
-			space text doctype tag /tag comment end [
+			space text doctype tag end-tag comment end [
 				do-token/in token in-select
 			]
 		]
 
 		after-body: [
+			"After Body"
 			space <html> [
 				do-token/in token in-body
 			]
@@ -3558,7 +3611,7 @@ rgchris.markup/load-html: make object! [
 			end [
 				finish-up
 			]
-			text tag /tag [
+			text tag end-tag [
 				; error
 				use body
 				do-token token
@@ -3569,6 +3622,7 @@ rgchris.markup/load-html: make object! [
 		]
 
 		in-frameset: [
+			"In Frameset"
 			space [
 				append-text token
 			]
@@ -3604,13 +3658,14 @@ rgchris.markup/load-html: make object! [
 				]
 				finish-up
 			]
-			text tag /tag [
+			text tag end-tag [
 				; error
 			]
 			comment [append-comment token]
 		]
 
 		after-frameset: [
+			"After Frameset"
 			space [
 				append-text token
 			]
@@ -3629,7 +3684,7 @@ rgchris.markup/load-html: make object! [
 			end [
 				finish-up
 			]
-			text tag /tag [
+			text tag end-tag [
 				; error
 				use body
 				do-token token
@@ -3640,13 +3695,14 @@ rgchris.markup/load-html: make object! [
 		]
 
 		after-after-body: [
+			"After After Body"
 			space doctype <html> [
 				do-token/in token in-body
 			]
 			end [
 				finish-up
 			]
-			text tag /tag [
+			text tag end-tag [
 				; error
 				use in-body
 				do-token token
@@ -3657,6 +3713,7 @@ rgchris.markup/load-html: make object! [
 		]
 
 		after-after-frameset: [
+			"After After Frameset"
 			space doctype <html> [
 				do-token/in token in-body
 			]
@@ -3672,7 +3729,7 @@ rgchris.markup/load-html: make object! [
 			tag [
 				report 'expected-eof-but-got-start-tag
 			]
-			/tag [
+			end-tag [
 				report 'expected-eof-but-got-end-tag
 			]
 			comment [
@@ -3681,28 +3738,47 @@ rgchris.markup/load-html: make object! [
 		]
 	]
 
+	count-of: func [string [string!] /local lines chars mark last-mark][
+		lines: 0
+		mark: head string
+
+		loop-until [
+			last-mark: :mark
+			++ lines
+			any [
+				not mark: find next mark newline
+				negative? offset-of mark string
+			]
+		]
+
+		chars: offset-of last-mark string
+
+		rejoin ["(" lines "," chars ")"]
+	]
+
 	report: func [
 		type [word! string!]
 		; info
 	][
-		also type print unspaced ["** " type ": error detected"]
+		also type print unspaced ["** " count-of html-tokenizer/series ": " type]
 	]
 
-	this-state-name: this-state: operative-state: return-state: state: last-state-name: token: _
+	current-state-name: current-state: return-state: state: last-state-name: token: _
 
 	use: func ['target [word!] /return][
-		last-state-name: :this-state-name
-		if return [return-state: :this-state-name]
-		this-state-name: target
+		last-state-name: :current-state-name
+		if return [return-state: :current-state-name]
+		current-state-name: target
 		; probe rejoin [<state: > target]
 		; probe token
-		state: this-state: any [
+		state: current-state: any [
 			select states :target
 			do make error! rejoin ["No Such State: " uppercase form target]
 		]
+		state
 	]
 
-	do-token: func [this [block! char! string!] /in 'other [word!] /local target][
+	do-token: func [this [block! char! string!] /in 'other [word!] /local target operative-state][
 		operative-state: _
 
 		if word? :other [
@@ -3713,54 +3789,54 @@ rgchris.markup/load-html: make object! [
 			]
 		]
 
-		operative-state: any [:operative-state state]
-
 		current-node: pick open-elements 1
+		state: any [:operative-state state]
+
+		target: case [
+			char? token ['space]
+			any [string? this char? this]['text]
+			not block? this [do make error! "Not A Token"]
+			all [
+				this/1 = 'tag
+				find state target: tagify this/2
+			][target]
+			all [
+				this/1 = 'end-tag
+				find state target: tagify/close this/2
+			][target]
+			this [this/1]
+		]
 
 		token: also token (
 			token: :this
-			switch case [
-				char? token ['space]
-				any [string? token char? token]['text]
-				not block? token [do make error! "Not A Token"]
-				token/1 = 'tag [
-					either find operative-state target: tagify token/2 [
-						target
-					][
-						'tag
-					]
-				]
-				token/1 = 'end-tag [
-					either find operative-state target: tagify/close token/2 [
-						target
-					][
-						/tag
-					]
-				]
-				token [token/1]
-			] operative-state
+			switch :target state
 		)
+
+		state: current-state
 
 		_
 	]
 
-	do-else: func [this [block! char! string!] /in 'other [word!]][
+	do-else: func [this [block! char! string!] /in 'other [word!] /local operative-state][
+		operative-state: _
+
 		if word? :other [
-			; probe to group! to tag! other
 			either find states other [
-					other: select states other
-				][
-					do make error! rejoin ["No such state: " to tag! uppercase form other
-				]
+				operative-state: select states other
+			][
+				do make error! rejoin ["No such state: " to tag! uppercase form other]
 			]
 		]
 
-		operative-state: any [:other state]
+		state: any [:operative-state state]
+		current-node: pick open-elements 1
 
 		token: also token (
 			token: :this
-			switch 'else operative-state
+			switch 'else state
 		)
+
+		state: :current-state
 
 		_
 	]
@@ -3773,7 +3849,7 @@ rgchris.markup/load-html: make object! [
 		document/head: document/body: document/form: _
 		insertion-type: 'append
 
-		this-state-name: this-state: return-state: state: last-state-name: _
+		current-state-name: current-state: return-state: state: last-state-name: _
 
 		use initial
 
