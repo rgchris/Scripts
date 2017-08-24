@@ -16,14 +16,6 @@ Red [
 #macro offset-of: func []['offset?]
 #macro [quote put: 'func block! block!] func [s e][none]
 
-++: func ['word [word!]][
-	either number? get/any word [
-		also get word set word add get word 1
-	][
-		make error! "++ Expected number argument."
-	]
-]
-
 Rebol [
 	Title: "Markup Codec"
 	Author: "Christopher Ross-Gill"
@@ -55,6 +47,14 @@ maps-equal?: func [value1 [map! blank!] value2 [map! blank!]][
 ]
 
 rgchris.markup: make map! 0
+
+rgchris.markup/increment: func ['word [word!]][
+	either number? get/any word [
+		also get word set word add get word 1
+	][
+		make error! "INCREMENT Expected number argument."
+	]
+]
 
 rgchris.markup/references: make object! [ ; need to update references
 	codepoints: [
@@ -2204,7 +2204,7 @@ rgchris.markup/load-html: make object! [
 					either all [
 						equal? node/name mark/1/name
 						maps-equal? node/value mark/1/value
-						(++ count) > 3
+						(rgchris.markup/increment count) > 3
 					][
 						remove mark
 					][
@@ -2300,7 +2300,7 @@ rgchris.markup/load-html: make object! [
 	reset-insertion-mode: func [/local mark node][
 		mark: :open-elements
 		forall mark [
-			if switch tagify mark/1/name [
+			if any-value? switch tagify mark/1/name [
 				<select> [
 					use in-select
 					foreach node next mark [
@@ -2599,7 +2599,7 @@ rgchris.markup/load-html: make object! [
 				count: 0
 
 				forever [
-					++ count
+					rgchris.markup/increment count
 
 					node: first mark: next mark
 
@@ -3099,7 +3099,7 @@ rgchris.markup/load-html: make object! [
 				; adjust-math-ml-attributes
 				; adjust-foreign-attributes
 				push append-element/namespace token svg
-				if token 'self-closing [
+				if find token 'self-closing [
 					pop-element
 				]
 			]
@@ -3188,14 +3188,7 @@ rgchris.markup/load-html: make object! [
 			]
 			</a> </b> </big> </code> </em> </font> </i> </nobr> </s> </small> </strike> </strong>
 			</tt> </u> [
-				either equal? token/2 current-node/name [
-					also node: pop-element
-					remove-each element active-formatting-elements [
-						same? element node
-					]
-				][
-					adopt token
-				]
+				adopt token
 			]
 			</applet> </marquee> </object> [
 				either find-in-scope :token/2 [
@@ -3210,6 +3203,9 @@ rgchris.markup/load-html: make object! [
 			tag [
 				reconstruct-formatting-elements
 				push append-element token
+				if find token 'self-closing [
+					pop-element
+				]
 			]
 			end-tag [
 				close-element token
@@ -3799,7 +3795,7 @@ rgchris.markup/load-html: make object! [
 
 		loop-until [
 			last-mark: :mark
-			++ lines
+			rgchris.markup/increment lines
 			any [
 				not mark: find next mark newline
 				negative? offset-of mark string
