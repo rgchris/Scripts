@@ -19,16 +19,17 @@ Red [
 Rebol [
 	Title: "Markup Codec"
 	Author: "Christopher Ross-Gill"
-	Date: 24-Jul-2017
+	Date: 28-Aug-2017
 	Home: http://ross-gill.com/page/HTML_and_Rebol
 	File: %markup.reb
-	Version: 0.2.0
+	Version: 0.2.1
 	Purpose: "Markup Loader for Ren-C and Red"
 	Rights: http://opensource.org/licenses/Apache-2.0
 	Type: module
 	Name: rgchris.markup
 	Exports: [decode-markup html-tokenizer load-markup load-html trees markup-as-block list-elements]
 	History: [
+		28-Aug-2017 0.2.1 "Working Adoption Agency algorithm"
 		21-Aug-2017 0.2.0 "Working Tree Creation (with caveats)"
 		24-Jul-2017 0.1.0 "Initial Version"
 	]
@@ -110,6 +111,7 @@ rgchris.markup/references: make object! [ ; need to update references
 		9001 "lang" #{E28CA9} 9002 "rang" #{E28CAA} 9674 "loz" #{E2978A} 9824 "spades" #{E299A0} 9827 "clubs" #{E299A3}
 		9829 "hearts" #{E299A5} 9830 "diams" #{E299A6}
 	]
+
 	replacements: make map! [
 		0 65533
 		128 8364
@@ -604,6 +606,7 @@ rgchris.markup/html-tokenizer: make object! [
 					token/2 = closer
 				][
 					closer: _
+					adjust token
 					switch series/1 [
 						#"^-" #"^/" #"^M" #" " [
 							use before-attribute-name
@@ -615,9 +618,8 @@ rgchris.markup/html-tokenizer: make object! [
 						]
 						#">" [
 							use data
-							token/2: to word! token/2
-							emit also token token: buffer: _
 							mark: next series
+							emit also token token: buffer: _
 						]
 					]
 				][
@@ -678,6 +680,7 @@ rgchris.markup/html-tokenizer: make object! [
 					token/2 = closer
 				][
 					closer: _
+					adjust token
 					switch series/1 [
 						#"^-" #"^/" #"^M" #" " [
 							use before-attribute-name
@@ -689,8 +692,7 @@ rgchris.markup/html-tokenizer: make object! [
 						]
 						#">" [
 							use data
-							mark: next mark
-							token/2: to word! token/2
+							mark: next series
 							emit also token token: buffer: _
 						]
 					]
@@ -829,6 +831,7 @@ rgchris.markup/html-tokenizer: make object! [
 			(
 				use script-data-escaped
 				emit "</"
+				emit also buffer buffer: _
 			)
 		]
 
@@ -840,6 +843,7 @@ rgchris.markup/html-tokenizer: make object! [
 					token/2 = closer
 				][
 					closer: _
+					adjust token
 					switch series/1 [
 						#"^-" #"^/" #"^M" #" " [
 							use before-attribute-name
@@ -852,7 +856,6 @@ rgchris.markup/html-tokenizer: make object! [
 						#">" [
 							use data
 							mark: next series
-							token/2: to word! token/2
 							emit also token token: buffer: _
 						]
 					]
@@ -1946,29 +1949,35 @@ rgchris.markup/load: make object! [
 load-markup: get in rgchris.markup/load 'load-markup
 
 trees: make object! [
-	new: does [
-		make map! [parent _ first _ last _ type document]
-	]
-
-	make-item: func [parent [block! map! blank!]][
-		make map! compose/only [
-			parent (parent) back _ next _ first _ last _
-			type _ name _ namespace _ value _
-		]
-	]
-
-	; new: does [new-line/all/skip copy [parent _ first _ last _ type document] true 2]
+	; new: does [
+	; 	make map! [parent _ first _ last _ type document]
+	; ]
 	;
-	; make-item: func [parent [block! map! blank!]][
-	; 	new-line/all/skip compose/only [
-	; 		parent (parent) back _ next _ first _ last _
-	; 		type _ name _ namespace _ value _
-	; 	] true 2
+	; make-node: does [
+	; 	make map! compose/only [
+	; 		parent _ back _ next _ first _ last _
+	; 		type _ name _ value _
+	; 	]
 	; ]
 
-	insert-before: func [item [block! map!] /local node][
-		node: make-item item/parent
+	new: does [
+		new-line/all/skip copy [
+			parent _ first _ last _ name _ public _ system _
+			form _ head _ body _ type document
+		] true 2
+	]
 
+	make-node: does [
+		new-line/all/skip copy [
+			parent _ back _ next _ first _ last _
+			type _ name _ value _
+		] true 2
+	]
+
+	insert-before: func [item [block! map!] /local node][
+		node: make-node
+
+		node/parent: item/parent
 		node/back: item/back
 		node/next: item
 
@@ -1982,8 +1991,9 @@ trees: make object! [
 	]
 
 	insert-after: func [item [block! map!] /local node][
-		node: make-item item/parent
+		node: make-node
 
+		node/parent: item/parent
 		node/back: item
 		node/next: item/next
 
@@ -2000,7 +2010,8 @@ trees: make object! [
 		either list/first [
 			insert-before list/first
 		][
-			list/first: list/last: make-item list
+			also list/first: list/last: make-node
+			list/first/parent: list
 		]
 	]
 
@@ -2026,7 +2037,11 @@ trees: make object! [
 		]
 	]
 
-	remove: func [item [block! map!] /back][
+	remove: func [item [block! map!] /back /next][
+		unless item/parent [
+			do make error! "Node does not exist in tree"
+		]
+
 		either item/back [
 			item/back/next: item/next
 		][
@@ -2039,9 +2054,13 @@ trees: make object! [
 			item/parent/last: item/back
 		]
 
-		also either back [item/back][item/next]
 		item/parent: item/back: item/next: _ ; node becomes freestanding
-		item
+
+		case [
+			back [item/back]
+			next [item/next]
+			/else [item]
+		]
 	]
 
 	clear: func [list [block! map!]][
@@ -2127,7 +2146,7 @@ markup-as-block: select rgchris.markup 'markup-as-block
 rgchris.markup/load-html: make object! [
 	document: space: head-node: body-node: form-node: parent: kid: last-token: _
 	open-elements: active-formatting-elements: pending-table-characters:
-	current-node: override-target: nodes: node: mark: _
+	current-node: nodes: node: mark: _
 	insertion-point: insertion-type: _
 	fostering?: false
 
@@ -2267,9 +2286,9 @@ rgchris.markup/load-html: make object! [
 		]
 	]
 
-	set-insertion-point: func [/local target last-table][
+	set-insertion-point: func [override-target [blank! block! map!] /local target last-table][
 		target: any [
-			override-target
+			:override-target
 			current-node
 		]
 
@@ -2339,8 +2358,7 @@ rgchris.markup/load-html: make object! [
 
 	append-element: func [token [block!] /to parent [map! block!] /namespace 'space [word!] /local node][
 		; probe token
-		override-target: any [:parent _]
-		set-insertion-point
+		set-insertion-point any [:parent _]
 
 		unless map? :parent [parent: :current-node]
 		unless word? :space [space: 'html]
@@ -2357,8 +2375,7 @@ rgchris.markup/load-html: make object! [
 	]
 
 	append-comment: func [token [block!] /to parent [map! block!] /local node][
-		override-target: any [:parent _]
-		set-insertion-point
+		set-insertion-point any [:parent _]
 
 		node: switch insertion-type [
 			append [trees/append insertion-point]
@@ -2371,8 +2388,7 @@ rgchris.markup/load-html: make object! [
 	]
 
 	append-text: func [token [char! string!] /to parent [map! block!] /local target][
-		override-target: any [:parent _]
-		set-insertion-point
+		set-insertion-point any [:parent _]
 
 		target: switch insertion-type [
 			append [insertion-point/last]
@@ -2621,7 +2637,7 @@ rgchris.markup/load-html: make object! [
 						]
 					]
 
-					clone: trees/make-item common-ancestor
+					clone: trees/make-node
 					clone/type: 'element
 					clone/name: node/name
 					clone/value: node/value
@@ -2640,11 +2656,14 @@ rgchris.markup/load-html: make object! [
 					last-node: :node
 				]
 
-				override-target: :common-ancestor
-				set-insertion-point
+				if last-node/parent [
+					trees/remove last-node
+				]
+
+				set-insertion-point common-ancestor
 				trees/append-existing insertion-point last-node
 
-				clone: trees/make-item furthest-block
+				clone: trees/make-node
 				clone/type: 'element
 				clone/name: formatting-element/name
 				clone/value: formatting-element/value
@@ -2655,8 +2674,8 @@ rgchris.markup/load-html: make object! [
 
 				trees/append-existing furthest-block clone
 
-				pop-formatting formatting-element
 				insert/only bookmark clone
+				pop-formatting formatting-element
 
 				remove find-element open-elements formatting-element
 				insert/only find-element open-elements furthest-block clone
@@ -3343,7 +3362,7 @@ rgchris.markup/load-html: make object! [
 			doctype tag end-tag comment end [
 				either find next pending-table-characters string! [
 					report 'needs-fostering
-					do-else/in probe rejoin pending-table-characters in-table
+					do-else/in rejoin pending-table-characters in-table
 					pending-table-characters: _
 					use :return-state
 					do-token token
