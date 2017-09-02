@@ -4,7 +4,7 @@ Rebol [
 	Date: 25-Jul-2017
 	; Home: tbd
 	File: %rsp.r
-	Version: 0.4.1
+	Version: 0.4.2
 	Purpose: {Rebol-embedded Markup}
 	Rights: http://opensource.org/licenses/Apache-2.0
 	Type: module
@@ -49,7 +49,7 @@ load-rsp: use [prototype to-set-block][
 				collect [
 					parse locals [
 						any [
-							set word word! (keep reduce [to set-word! word get/any word])
+							set word word! (keep reduce [to set-word! word get :word])
 						]
 					]
 				]
