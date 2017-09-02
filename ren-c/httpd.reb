@@ -25,6 +25,10 @@ as-string: func [binary [binary!] /local mark][
 	to string! binary
 ]
 
+increment: func ['name [word!]][
+    also get name set name add get name 1
+]
+
 sys/make-scheme [
 	title: "HTTP Server"
 	name: 'httpd
@@ -146,7 +150,7 @@ sys/make-scheme [
 
 			switch/default event/type [
 				read [
-					++ instance
+					increment instance
 					; print rejoin ["[" instance "]"]
 
 					either find client/data #{0D0A0D0A} [
