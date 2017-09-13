@@ -4,7 +4,7 @@ Red [
 	Date: 18-Sep-2015
 	Home: http://www.ross-gill.com/page/JSON_and_Rebol
 	File: %altjson.red
-	Version: 0.3.6.1
+	Version: 0.3.6.2
 	Purpose: "Convert a Red block to a JSON string"
 	Rights: http://opensource.org/licenses/Apache-2.0
 	Type: 'module
@@ -315,7 +315,7 @@ to-json: use [
 		  lookup ; resolve a GET-WORD! reference
 		| number! (emit here/1)
 		| [logic! | 'true | 'false] (emit to string! here/1)
-		| [none! | 'none | 'none] (emit 'null)
+		| [none! | 'none | 'none] (emit "null")
 		| date! emit-date
 		| issue! emit-issue
 		| [
