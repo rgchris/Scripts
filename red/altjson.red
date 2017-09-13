@@ -1,10 +1,10 @@
 Red [
-	Title: "JSON Parser for Red"
+	Title: "JSON Decoder/Encoder for Red"
 	Author: "Christopher Ross-Gill"
-	Date: 18-Sep-2015
+	Date: 12-Sep-2017
 	Home: http://www.ross-gill.com/page/JSON_and_Rebol
 	File: %altjson.red
-	Version: 0.3.6.2
+	Version: 0.3.6.3
 	Purpose: "Convert a Red block to a JSON string"
 	Rights: http://opensource.org/licenses/Apache-2.0
 	Type: 'module
@@ -71,10 +71,10 @@ load-json: use [
 			#"^(f900)" - #"^(FDCF)" #"^(FDF0)" - #"^(FFFD)"
 		]
 
-		func [val [string!]][
+		func [text [string!]][
 			all [
-				parse val [word1 any word+]
-				to word! val
+				parse text [word1 any word+]
+				to word! text
 			]
 		]
 	]
@@ -93,7 +93,7 @@ load-json: use [
 
 		as-num: func [val [string!]][
 			case [
-				not parse val [opt "-" some dg][to decimal! val]
+				not parse val [opt "-" some dg][to float! val]
 				not integer? try [val: to integer! val][to issue! val]
 				val [val]
 			]
@@ -212,11 +212,10 @@ load-json: use [
 ]
 
 to-json: use [
-	json emit emits escape emit-issue emit-date
+	json emit escape emit-string emit-issue emit-date
 	here lookup comma block object block-of-pairs value
 ][
 	emit: func [data][repend json data]
-	emits: func [data][emit {"} emit data emit {"}]
 
 	escape: use [mp ch to-char encode][
 		mp: #(#"^/" "\n" #"^M" "\r" #"^-" "\t" #"^"" "\^"" #"\" "\\" #"/" "\/")
@@ -228,7 +227,7 @@ to-json: use [
 
 		encode: use [mark][
 			[
-				mark: change skip (
+				change mark: skip (
 					case [
 						find mp mark/1 [select mp mark/1]
 						mark/1 < 10000h [to-char mark/1]
@@ -238,45 +237,53 @@ to-json: use [
 								to-char mark/1 - 10000h // 400h + DC00h
 							]
 						]
+						/else ["\uFFFD"]
 					]
 				)
 			]
 		]
 
-		func [txt][
-			parse txt [any [some ch | encode]]
-			head txt
+		func [text][
+			also text parse text [any [some ch | encode]]
 		]
 	]
 
+	emit-string: func [data][emit {"} emit data emit {"}]
+
 	emit-issue: use [dg nm mk][
 		dg: charset "0123456789"
-		nm: [opt "-" some dg]
+		nm: [opt #"-" some dg]
 
-		quote (either parse next form here/1 [copy mk nm][emit mk][emits here/1])
+		quote (either parse next form here/1 [copy mk nm][emit mk][emit-string here/1])
 	]
 
-	emit-date: use [pad second][
-		pad: func [part length][part: to string! part head insert/dup part "0" length - length? part]
-
+	emit-date: use [second][
 		quote (
-			emits rejoin collect [
-				keep reduce [pad here/1/year 4 "-" pad here/1/month 2 "-" pad here/1/day 2]
+			emit-string rejoin collect [
+				keep reduce [
+					pad/left/with here/1/year 4 #"0"
+					#"-" pad/left/with here/1/month 2 #"0"
+					#"-" pad/left/with here/1/day 2 #"0"
+				]
 				if here/1/time [
-					keep reduce ["T" pad here/1/hour 2 ":" pad here/1/minute 2 ":"]
-					keep either integer? here/1/second [
-						pad here/1/second 2
-					][
-						second: split to string! here/1/second "."
-						reduce [pad second/1 2 "." second/2]
+					keep reduce [
+						#"T" pad/left/with here/1/hour 2 #"0"
+						#":" pad/left/with here/1/minute 2 #"0"
+						#":"
+					]
+					keep pad/left/with to integer! here/1/second 2 #"0"
+					any [
+						".0" = second: find form round/to here/1/second 0.000001 #"."
+						keep second
 					]
 					keep either any [
 						none? here/1/zone
 						zero? here/1/zone
-					]["Z"][
+					][#"Z"][
 						reduce [
-							either here/1/zone/hour < 0 ["-"]["+"]
-							pad absolute here/1/zone/hour 2 ":" pad here/1/zone/minute 2
+							either here/1/zone/hour < 0 [#"-"][#"+"]
+							pad/left/with absolute here/1/zone/hour 2 #"0"
+							#":" pad/left/with here/1/zone/minute 2 #"0"
 						]
 					]
 				]
@@ -285,15 +292,13 @@ to-json: use [
 	]
 
 	lookup: [
-		here: [get-word! | get-path!]
-		(change here reduce reduce [here/1])
-		fail
+		change [get-word! | get-path!] (reduce reduce [here/1])
 	]
 
-	comma: [(if not tail? here [emit ","])]
+	comma: quote (unless tail? here [emit ","])
 
 	block: [
-		(emit "[") any [here: value here: comma] (emit "]")
+		(emit #"[") any [here: value here: comma] (emit #"]")
 	]
 
 	block-of-pairs: [
@@ -312,7 +317,7 @@ to-json: use [
 	]
 
 	value: [
-		  lookup ; resolve a GET-WORD! reference
+		  lookup fail ; resolve a GET-WORD! reference
 		| number! (emit here/1)
 		| [logic! | 'true | 'false] (emit to string! here/1)
 		| [none! | 'none | 'none] (emit "null")
@@ -320,14 +325,14 @@ to-json: use [
 		| issue! emit-issue
 		| [
 			any-string! | word! | lit-word! | tuple! | pair! | time!
-		] (emits escape form here/1)
-		| any-word! (emits escape form to word! here/1)
+		] (emit-string escape form here/1)
+		| any-word! (emit-string escape form to word! here/1)
 
 		| ahead [object! | map!] (change/only here body-of first here) into object
 		| ahead into block-of-pairs (change/only here copy first here) into object
 		| ahead any-block! (change/only here copy first here) into block
 
-		| any-type! (emits to tag! type? first here)
+		| any-type! (emit-string to tag! type? first here)
 	]
 
 	func [data][
