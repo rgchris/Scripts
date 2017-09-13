@@ -192,19 +192,10 @@ load-json: use [
 
 	func [
 		"Convert a JSON string to Rebol data"
-		json [string! binary! file! url!] "JSON string"
+		json [string!] "JSON string"
 		/flat "Objects are imported as tag-value pairs"
 		/padded "Loads JSON data wrapped in a JSONP envelope"
 	][
-		case/all [
-			any [file? json url? json][
-				if error? json: try [read/string (json)][
-					do :json
-				]
-			]
-			binary? json [json: to string! json]
-		]
-
 		is-flat: :flat
 		tree: here: make block! 0
 
