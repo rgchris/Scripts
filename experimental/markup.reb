@@ -50,7 +50,7 @@ maps-equal?: func [value1 [map! blank!] value2 [map! blank!]][
 rgchris.markup: make map! 0
 
 rgchris.markup/increment: func ['word [word!]][
-	either number? get/any word [
+	either number? get :word [
 		also get word set word add get word 1
 	][
 		make error! "INCREMENT Expected number argument."
