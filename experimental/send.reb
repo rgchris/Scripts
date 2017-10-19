@@ -51,7 +51,7 @@ send: use [default-mailbox to-idate to-iheader build-attach-body][
 		][
 			time: make time! time 
 			pad: func [n][head insert/dup n: form n #"0" 2 - length? n] 
-			rejoin [
+			unspaced [
 				pad time/hour ":" pad time/minute ":" 
 				pad round/down time/second
 			]
@@ -66,7 +66,7 @@ send: use [default-mailbox to-idate to-iheader build-attach-body][
 			remove find str ":" 
 			if (first str) <> #"-" [insert str #"+"] 
 			if (length? str) <= 4 [insert next str #"0"] 
-			reform [
+			spaced [
 				pick ["Mon," "Tue," "Wed," "Thu," "Fri," "Sat," "Sun,"] date/weekday 
 				date/day 
 				pick ["Jan" "Feb" "Mar" "Apr" "May" "Jun" "Jul" "Aug" "Sep" "Oct" "Nov" "Dec"] date/month 
@@ -257,7 +257,7 @@ send: use [default-mailbox to-idate to-iheader build-attach-body][
 				headers/Content-Type: "text/plain; charset=utf-8"
 			]
 
-			parse/all headers/Content-Type ["text/" ["plain" | "html"]][
+			parse headers/Content-Type ["text/" ["plain" | "html"]][
 				headers/Content-Type: join-of headers/Content-Type "; charset=UTF-8"
 			]
 		]
