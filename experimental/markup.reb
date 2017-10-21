@@ -3911,7 +3911,7 @@ rgchris.markup/load-html: make object! [
 		_
 	]
 
-	load-html: func [source [string!]][
+	load-html: func [source [string!] /quiet][
 		open-elements: make block! 12
 		active-formatting-elements: make block! 6
 		last-token: _
@@ -3927,9 +3927,11 @@ rgchris.markup/load-html: make object! [
 		func [current [block! char! string!]][
 			do-token token: :current
 		] ; /
-		func [type [word! string!]][
+		if quiet [func [type [word! string!]][
+		  type
+		]] else [func [type [word! string!]][
 			report :type html-tokenizer/series
-		]
+		]]
 
 		html-tokenizer/start
 
