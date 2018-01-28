@@ -3,7 +3,7 @@ Rebol [
 	Author: "Christopher Ross-Gill"
 	Date: 25-Jul-2017
 	; Home: tbd
-	File: %rsp.r
+	File: %rsp.reb
 	Version: 0.4.2
 	Purpose: {Rebol-embedded Markup}
 	Rights: http://opensource.org/licenses/Apache-2.0

@@ -2,13 +2,13 @@ Rebol [
 	Title: "Web Form Encoder/Decoder for Rebol 3"
 	Author: "Christopher Ross-Gill"
 	Date: 14-Jul-2017
-	Home: http://www.ross-gill.com/page/Web_Forms_and_REBOL
-	File: %webform.reb
+	Home: http://www.ross-gill.com/page/Web_Forms_and_Rebol
+	File: %altwebform.reb
 	Version: 0.10.4
 	Purpose: "Convert a Rebol block to/from a URL-Encoded Web Form string"
 	Rights: http://opensource.org/licenses/Apache-2.0
-	Type: 'module
-	Name: 'rgchris.altwebform
+	Type: module
+	Name: rgchris.altwebform
 	Exports: [url-decode url-encode load-webform to-webform]
 	History: [
 		14-Jul-2017 0.10.4 "Raise error if input block is invalid"
@@ -19,7 +19,7 @@ Rebol [
 		27-Feb-2013  0.9.2 "Correct encoding of UTF-8 values"
 		18-Nov-2009  0.1.0 "Original Version"
 	]
-	Example: [
+	Usage: [
 		load-webform "a=3&aa.a=1&b.c=1&b.c=2"
 		to-webform [a "3" aa [a "1"] b [c ["1" "2"]]]
 	]

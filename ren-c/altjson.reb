@@ -29,7 +29,7 @@ Rebol [
 		06-Aug-2010 0.2.2 "Issue! composed of digits encoded as integers"
 		22-May-2005 0.1.0 "Original Version"
 	]
-	Notes: {
+	Comment: {
 		- Converts date! to RFC 3339 Date String
 	}
 ]

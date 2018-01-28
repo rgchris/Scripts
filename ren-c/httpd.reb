@@ -3,11 +3,12 @@ Rebol [
 	Author: "Christopher Ross-Gill"
 	Date: 23-Feb-2017
 	File: %httpd.reb
+	Home: _
 	Version: 0.3.0
 	Purpose: "An elementary Web Server scheme for creating fast prototypes"
 	Rights: http://opensource.org/licenses/Apache-2.0
 	Type: module
-	Name: httpd
+	Name: rgchris.httpd
 	History: [
 		23-Feb-2017 0.3.0 "Adapted from Rebol 2"
 		06-Feb-2017 0.2.0 "Include HTTP Parser/Dispatcher"
@@ -25,8 +26,8 @@ as-string: func [binary [binary!] /local mark][
 	to string! binary
 ]
 
-increment: func ['name [word!]][
-    also get name set name add get name 1
+increment: func [name [word!]][
+	-1 + set name add get name 1
 ]
 
 sys/make-scheme [
