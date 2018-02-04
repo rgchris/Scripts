@@ -1,20 +1,21 @@
 Rebol [
 	Title: "cURL"
-	Purpose: "Rebol wrapper for cURL command."
-	Needs: [2.102.0]
-	Date: 21-Oct-2012
-	File: %curl.reb
-	Version: 0.1.3
 	Author: "Christopher Ross-Gill"
+	Date: 21-Oct-2012
+	Home: http://ross-gill.com/page/REST_Protocol
+	File: %curl.reb
+	Version: 0.1.4
+	Purpose: "Rebol wrapper for cURL command."
 	Rights: http://opensource.org/licenses/Apache-2.0
-	Comments: ["cURL Home Page" http://curl.haxx.se/]
 	Type: module
 	Name: rgchris.curl
 	Exports: [curl]
+	History: []
+	Comment: ["cURL Home Page" http://curl.haxx.se/]
 ]
 
 curl: use [user-agent form-headers enquote][
-	user-agent: reform ["Rebol" system/product system/version]
+	user-agent: unspaced ["Rebol/" uppercase/part form system/product 1 " " system/version]
 
 	enquote: func [
 		data [block! any-string!]
@@ -26,12 +27,12 @@ curl: use [user-agent form-headers enquote][
 
 	form-headers: func [headers [block! object!] /local out][
 		collect [
-			foreach [header value] switch type?/word headers [
-				block! [headers]
-				object! [body-of headers]
+			foreach [header value] switch type-of headers [
+				:block! [headers]
+				:object! [body-of headers]
 			][
 				if value [
-					keep rejoin [" -H " enquote [form header ": " value]]
+					keep unspaced [" -H " enquote [spelling-of header ": " value]]
 				]
 			]
 		]
@@ -61,50 +62,46 @@ curl: use [user-agent form-headers enquote][
 		/error "Specify error string"
 		err [string! blank!] "String to contain error"
 		/timeout "Specify a time limit"
-		time [time! blank!] "Time limit"
-		/local command code
+		time [time! integer! blank!] "Time limit"
+		/local command options code
 	][
 		out: any [:out make binary! 0]
 		err: any [:err make string! 0]
 
-		command: rejoin collect [
-			keep "curl -s"
+		options: unspaced collect [
+			keep "-s"
 
 			case/all [
 				full [keep "i"]
 				fail [keep "f"]
 				not secure [keep "k"]
 				follow [keep "L"]
-				all [method verb] [keep " -X " keep verb: uppercase form verb]
-				all [timeout time] [keep " -m " keep to integer! time]
-				all [send data] [
-					either file? data [
-						keep reduce [" -d @" form data]
-						data: ""
+				any [:verb _] [keep " -X " keep verb: uppercase form verb]
+				any [:time _] [keep " -m " keep to integer! time]
+				void? :data [data: _]
+				file? data [
+					keep reduce [" -d @" form data]
+					data: _
+				]
+				data [
+					either empty? data [
+						data: _
 					][
 						keep " -d @-"
 					]
 				]
-				all [user name pass][keep " -u " keep enquote [name ":" pass]]
-				all [header headers] [keep form-headers headers]
+				not void? all [:name :pass][keep " -u " keep enquote [name ":" pass]]
+				any [:headers _] [keep form-headers headers]
 			]
 
 			keep reduce [
 				" -A " enquote any [:agent user-agent]
 			]
-
-			keep reduce [" " enquote url]
 		]
 
-		if empty? data: any [:data make binary! 0][
-			data: _  ; 2.0.99.2.5 breaks with empty string
-		]
+		command: spaced ["curl" options enquote url]
 
 		code: call/shell/wait/input/output/error command data out err
-
-		; net-utils/net-log [to-word any [verb "GET"] url]
-		; net-utils/net-log command
-		; net-utils/net-log reform ["cURL Response Code:" code]
 
 		switch/default code [
 			0 18 [
