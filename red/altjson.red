@@ -11,6 +11,7 @@ Red [
 	Name: 'rgchris.altjson
 	Exports: [load-json to-json]
 	History: [
+		24-Feb-2018 0.4.0 "New TO-JSON engine, /PRETTY option"
 		12-Sep-2017 0.3.6.1 "Red Compatibilities"
 		18-Sep-2015 0.3.6 "Non-Word keys loaded as strings"
 		17-Sep-2015 0.3.5 "Added GET-PATH! lookup"
@@ -34,16 +35,22 @@ Red [
 	}
 ]
 
-use: func [locals [block!] body [block!]][
-	do bind body make object! collect [
-		forall locals [keep to set-word! locals/1]
-		keep none
+#macro ['use set locals block!] func [s e][
+	reduce [
+		make function! [
+			[locals [object!] body [block!]]
+			[do bind body locals]
+		]
+		make object! collect [
+			forall locals [keep to set-word! locals/1]
+			keep none
+		]
 	]
 ]
 
 load-json: use [
 	tree branch here val is-flat emit new-child to-parent neaten-one neaten-two word to-word
-	space comma number string block object _content value ident
+	space comma number string array object _content value ident
 ][
 	branch: make block! 10
 
@@ -110,9 +117,9 @@ load-json: use [
 
 		decode-surrogate: func [char [string!]][
 			char: debase/base char 16
-			to char! 65536
-				+ (shift/left 1023 and to integer! take/part char 2 10)
-				+ (1023 and to integer! char)
+			#"^(10000)"
+				+ (shift/left 03FFh and to integer! take/part char 2 10)
+				+ (03FFh and to integer! char)
 		]
 
 		decode: use [char escape][
@@ -146,7 +153,7 @@ load-json: use [
 		[#"^"" copy val [any [some ch | #"\" [#"u" 4 hx | es]]] #"^"" (val: decode val)]
 	]
 
-	block: use [list][
+	array: use [list][
 		list: [space opt [value any [comma value]] space]
 
 		[#"[" new-child list #"]" neaten-one to-parent]
@@ -187,11 +194,12 @@ load-json: use [
 		| number (emit val)
 		| string (emit val)
 		| _content
-		| object | block
+		| array
+		| object
 	]
 
 	func [
-		"Convert a JSON string to Rebol data"
+		"Convert a JSON string to Red data"
 		json [string!] "JSON string"
 		/flat "Objects are imported as tag-value pairs"
 		/padded "Loads JSON data wrapped in a JSONP envelope"
@@ -212,131 +220,248 @@ load-json: use [
 ]
 
 to-json: use [
-	json emit escape emit-string emit-issue emit-date
-	here lookup comma block object block-of-pairs value
+	json emit emit-part stack is-pretty indent colon circular unknown
+	
+	escape emit-string emit-issue emit-date
+	emit-array emit-object emit-value
 ][
 	emit: func [data][repend json data]
+	emit-part: func [from [string!] to [string!]][
+		append/part json from to
+	]
 
-	escape: use [mp ch to-char encode][
-		mp: #(#"^/" "\n" #"^M" "\r" #"^-" "\t" #"^"" "\^"" #"\" "\\" #"/" "\/")
-		ch: intersect ch: charset [#" " - #"~"] difference ch charset words-of mp
+	stack: make block! 16 ; check for recursion
 
-		to-char: func [char [char!]][
-			rejoin ["\u" skip tail form to-hex to integer! char -4]
+	indent: ""
+	colon: ":"
+	circular: {["..."]}
+	unknown: {"\uFFFD"}
+
+	increase: func [indent [string!]][
+		either is-pretty [
+			append indent "    "
+		][
+			indent
+		]
+	]
+
+	decrease: func [indent [string!]][
+		either is-pretty [
+			head clear skip tail indent -4
+		][
+			indent
+		]
+	]
+
+	emit-array: func [
+		elements [block!]
+	][
+		emit #"["
+		unless tail? elements [
+			increase indent
+			while [not tail? elements][
+				emit indent
+				emit-value pick elements 1
+				unless tail? elements: next elements [
+					emit #","
+				]
+			]
+			emit decrease indent
+		]
+		emit #"]"
+	]
+
+	emit-object: func [
+		members [block!]
+	][
+		emit #"{"
+		unless tail? members [
+			increase indent
+			while [not tail? members][
+				emit indent
+				emit-string pick members 1
+				emit colon
+				emit-value pick members 2
+				unless tail? members: skip members 2 [
+					emit #","
+				]
+			]
+			emit decrease indent
+		]
+		emit #"}"
+	]
+
+	emit-string: use [escapes chars emit-char][
+		escapes: #(#"^/" "\n" #"^M" "\r" #"^-" "\t" #"^"" "\^"" #"\" "\\")
+		chars: intersect chars: charset [#" " - #"~"] difference chars charset words-of escapes
+
+		emit-char: func [char [char!]][
+			emit ["\u" skip tail form to-hex to integer! char -4]
 		]
 
-		encode: use [mark][
-			[
-				change mark: skip (
-					case [
-						find mp mark/1 [select mp mark/1]
-						mark/1 < 10000h [to-char mark/1]
-						mark/1 [
-							rejoin [
-								to-char mark/1 - 10000h / 400h + D800h
-								to-char mark/1 - 10000h // 400h + DC00h
+		func [
+			value [any-type!]
+			/local mark extent
+		][
+			value: switch/default type?/word value [
+				string! [value]
+				get-word! set-word! [to string! to word! value]
+				binary! [enbase value]
+			][
+				to string! value
+			]
+
+			emit #"^""
+			parse value [
+				any [
+					  mark: some chars extent: (emit-part mark extent)
+					| skip (
+						case [
+							find escapes mark/1 [emit select escapes mark/1]
+							mark/1 < 10000h [emit-char mark/1]
+							mark/1 [ ; surrogate pairs
+								emit-char mark/1 - 10000h / 400h + D800h
+								emit-char mark/1 - 10000h // 400h + DC00h
 							]
+							/else [emit "\uFFFD"]
 						]
-						/else ["\uFFFD"]
-					]
-				)
-			]
-		]
-
-		func [text][
-			also text parse text [any [some ch | encode]]
-		]
-	]
-
-	emit-string: func [data][emit {"} emit data emit {"}]
-
-	emit-issue: use [dg nm mk][
-		dg: charset "0123456789"
-		nm: [opt #"-" some dg]
-
-		quote (either parse next form here/1 [copy mk nm][emit mk][emit-string here/1])
-	]
-
-	emit-date: use [second][
-		quote (
-			emit-string rejoin collect [
-				keep reduce [
-					pad/left/with here/1/year 4 #"0"
-					#"-" pad/left/with here/1/month 2 #"0"
-					#"-" pad/left/with here/1/day 2 #"0"
-				]
-				if here/1/time [
-					keep reduce [
-						#"T" pad/left/with here/1/hour 2 #"0"
-						#":" pad/left/with here/1/minute 2 #"0"
-						#":"
-					]
-					keep pad/left/with to integer! here/1/second 2 #"0"
-					any [
-						".0" = second: find form round/to here/1/second 0.000001 #"."
-						keep second
-					]
-					keep either any [
-						none? here/1/zone
-						zero? here/1/zone
-					][#"Z"][
-						reduce [
-							either here/1/zone/hour < 0 [#"-"][#"+"]
-							pad/left/with absolute here/1/zone/hour 2 #"0"
-							#":" pad/left/with here/1/zone/minute 2 #"0"
-						]
-					]
+					)
 				]
 			]
-		)
-	]
-
-	lookup: [
-		change [get-word! | get-path!] (reduce reduce [here/1])
-	]
-
-	comma: quote (unless tail? here [emit ","])
-
-	block: [
-		(emit #"[") any [here: value here: comma] (emit #"]")
-	]
-
-	block-of-pairs: [
-		  some [set-word! skip]
-		| some [tag! skip]
-	]
-
-	object: [
-		(emit "{")
-		any [
-			here: [set-word! (change here to word! here/1) | any-string! | any-word!]
-			(emit [{"} escape to string! here/1 {":}])
-			here: value here: comma
+			emit #"^""
 		]
-		(emit "}")
 	]
 
-	value: [
-		  lookup fail ; resolve a GET-WORD! reference
-		| number! (emit here/1)
-		| [logic! | 'true | 'false] (emit to string! here/1)
-		| [none! | 'none | 'none] (emit "null")
-		| date! emit-date
-		| issue! emit-issue
-		| [
-			any-string! | word! | lit-word! | tuple! | pair! | time!
-		] (emit-string escape form here/1)
-		| any-word! (emit-string escape form to word! here/1)
-
-		| ahead [object! | map!] (change/only here body-of first here) into object
-		| ahead into block-of-pairs (change/only here copy first here) into object
-		| ahead any-block! (change/only here copy first here) into block
-
-		| any-type! (emit-string to tag! type? first here)
+	emit-date: func [value [date!] /local second][
+		emit #"^""
+		emit [
+			pad/left/with value/year 4 #"0"
+			#"-" pad/left/with value/month 2 #"0"
+			#"-" pad/left/with value/day 2 #"0"
+		]
+		if value/time [
+			emit [
+				#"T" pad/left/with value/hour 2 #"0"
+				#":" pad/left/with value/minute 2 #"0"
+				#":"
+			]
+			emit pad/left/with to integer! value/second 2 #"0"
+			any [
+				".0" = second: find form round/to value/second 0.000001 #"."
+				emit second
+			]
+			emit either any [
+				none? value/zone
+				zero? value/zone
+			][#"Z"][
+				[
+					either value/zone/hour < 0 [#"-"][#"+"]
+					pad/left/with absolute value/zone/hour 2 #"0"
+					#":" pad/left/with value/zone/minute 2 #"0"
+				]
+			]
+		]
+		emit #"^""
 	]
 
-	func [data][
+	emit-issue: use [digit number][
+		digit: charset "0123456789"
+		number: [opt #"-" some digit]
+
+		func [value [issue!]][
+			value: next mold value
+			either parse value number [
+				emit value
+			][
+				emit-string value
+			]
+		]
+	]
+
+	emit-value: func [value [any-type!]][
+		if any [
+			get-word? :value
+			get-path? :value
+		][
+			; probe "GETTING"
+			set/any 'value take reduce reduce [value]
+		]
+
+		switch value [
+			none blank null _ [value: none]
+			true yes [value: true]
+			false no [value: false]
+		]
+
+		switch/default type?/word value [
+			block! [
+				either find/only/same stack value [
+					emit circular
+				][
+					insert/only stack value
+					either parse value [some [set-word! skip] | some [tag! skip]][
+						emit-object value
+					][
+						emit-array value
+					]
+					remove stack
+				]
+			]
+
+			object! map! [
+				either find/same stack value [
+					emit circular
+				][
+					emit-object body-of value
+				]
+			]
+
+			string! binary! file! email! url! tag! pair! time! tuple! money!
+			word! lit-word! get-word! set-word! refinement! [
+				emit-string value
+			]
+
+			issue! [
+				emit-issue value
+			]
+
+			date! [
+				emit-date value
+			]
+
+			integer! float! decimal! [
+				emit to string! value
+			]
+
+			logic! [
+				emit to string! value
+			]
+
+			none! unset! [
+				emit "null"
+			]
+
+			paren! path! get-path! set-path! lit-path! [
+				emit-array value
+			]
+		][
+			emit unknown
+		]
+
+		json
+	]
+
+	func [
+		"Convert a Red value to JSON string"
+		item [any-type!] "Red value to convert"
+		/pretty "Format Output"
+	][
+		is-pretty: :pretty
+		indent: pick ["^/" ""] is-pretty
+		colon: pick [": " ":"] is-pretty
+
+		clear stack
 		json: make string! 1024
-		if parse compose/only [(data)][here: value][json]
+		emit-value item
 	]
 ]
