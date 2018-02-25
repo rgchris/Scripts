@@ -1,10 +1,10 @@
 Red [
 	Title: "JSON Decoder/Encoder for Red"
 	Author: "Christopher Ross-Gill"
-	Date: 12-Sep-2017
+	Date: 24-Feb-2018
 	Home: http://www.ross-gill.com/page/JSON_and_Rebol
 	File: %altjson.red
-	Version: 0.3.6.3
+	Version: 0.4.0
 	Purpose: "Convert a Red block to a JSON string"
 	Rights: http://opensource.org/licenses/Apache-2.0
 	Type: 'module
@@ -32,6 +32,9 @@ Red [
 	]
 	Notes: {
 		- Converts date! to RFC 3339 Date String
+		- Flattens Flicker '_content' objects
+		- Handles Surrogate Pairs
+		- Supports JSONP
 	}
 ]
 
