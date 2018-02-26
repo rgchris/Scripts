@@ -4,13 +4,14 @@ Red [
 	Date: 24-Feb-2018
 	Home: http://www.ross-gill.com/page/JSON_and_Rebol
 	File: %altjson.red
-	Version: 0.4.0
+	Version: 0.4.1
 	Purpose: "Convert a Red block to a JSON string"
 	Rights: http://opensource.org/licenses/Apache-2.0
 	Type: 'module
 	Name: 'rgchris.altjson
 	Exports: [load-json to-json]
 	History: [
+		24-Feb-2018 0.4.1 "Red Compiler Friendly"
 		24-Feb-2018 0.4.0 "New TO-JSON engine, /PRETTY option"
 		12-Sep-2017 0.3.6.1 "Red Compatibilities"
 		18-Sep-2015 0.3.6 "Non-Word keys loaded as strings"
@@ -32,202 +33,174 @@ Red [
 	]
 	Notes: {
 		- Converts date! to RFC 3339 Date String
-		- Flattens Flicker '_content' objects
+		- Flattens Flickr '_content' objects
 		- Handles Surrogate Pairs
 		- Supports JSONP
 	}
 ]
 
-#macro ['use set locals block!] func [s e][
-	reduce [
-		make function! [
-			[locals [object!] body [block!]]
-			[do bind body locals]
-		]
-		make object! collect [
-			forall locals [keep to set-word! locals/1]
-			keep none
-		]
-	]
-]
+json-loader: make object! [
+	tree: here: mark: current-value: is-flat: none
 
-load-json: use [
-	tree branch here val is-flat emit new-child to-parent neaten-one neaten-two word to-word
-	space comma number string array object _content value ident
-][
 	branch: make block! 10
 
-	emit: func [val][here: insert/only here val]
+	emit: func [value][here: insert/only here value]
 	new-child: quote (insert/only branch insert/only here here: make block! 10)
 	to-parent: quote (here: take branch)
 	neaten-one: quote (new-line/all head here true)
 	neaten-two: quote (new-line/all/skip head here true 2)
 
-	to-word: use [word1 word+][
-		; upper ranges borrowed from AltXML
-		word1: charset [
-			"!&*=?ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz|~"
-			#"^(C0)" - #"^(D6)" #"^(D8)" - #"^(F6)" #"^(F8)" - #"^(02FF)"
-			#"^(0370)" - #"^(037D)" #"^(037F)" - #"^(1FFF)" #"^(200C)" - #"^(200D)"
-			#"^(2070)" - #"^(218F)" #"^(2C00)" - #"^(2FEF)" #"^(3001)" - #"^(D7FF)"
-			#"^(f900)" - #"^(FDCF)" #"^(FDF0)" - #"^(FFFD)"
-		]
+	; upper ranges borrowed from AltXML
+	word-initial: charset [
+		"!&*=?ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz|~"
+		#"^(C0)" - #"^(D6)" #"^(D8)" - #"^(F6)" #"^(F8)" - #"^(02FF)"
+		#"^(0370)" - #"^(037D)" #"^(037F)" - #"^(1FFF)" #"^(200C)" - #"^(200D)"
+		#"^(2070)" - #"^(218F)" #"^(2C00)" - #"^(2FEF)" #"^(3001)" - #"^(D7FF)"
+		#"^(f900)" - #"^(FDCF)" #"^(FDF0)" - #"^(FFFD)"
+	]
 
-		word+: charset [
-			"!&'*+-.0123456789=?ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz|~"
-			#"^(B7)" #"^(C0)" - #"^(D6)" #"^(D8)" - #"^(F6)" #"^(F8)" - #"^(037D)"
-			#"^(037F)" - #"^(1FFF)" #"^(200C)" - #"^(200D)" #"^(203F)" - #"^(2040)"
-			#"^(2070)" - #"^(218F)" #"^(2C00)" - #"^(2FEF)" #"^(3001)" - #"^(D7FF)"
-			#"^(f900)" - #"^(FDCF)" #"^(FDF0)" - #"^(FFFD)"
-		]
+	word-chars: charset [
+		"!&'*+-.0123456789=?ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz|~"
+		#"^(B7)" #"^(C0)" - #"^(D6)" #"^(D8)" - #"^(F6)" #"^(F8)" - #"^(037D)"
+		#"^(037F)" - #"^(1FFF)" #"^(200C)" - #"^(200D)" #"^(203F)" - #"^(2040)"
+		#"^(2070)" - #"^(218F)" #"^(2C00)" - #"^(2FEF)" #"^(3001)" - #"^(D7FF)"
+		#"^(f900)" - #"^(FDCF)" #"^(FDF0)" - #"^(FFFD)"
+	]
 
-		func [text [string!]][
-			all [
-				parse text [word1 any word+]
-				to word! text
-			]
+	to-word: function [text [string!]][
+		all [
+			parse text [word-initial any word-chars]
+			to word! text
 		]
 	]
 
-	space: use [space][
-		space: charset " ^-^/^M"
-		[any space]
-	]
+	space-chars: charset " ^-^/^M"
+
+	space: [any space-chars]
 
 	comma: [space #"," space]
 
-	number: use [dg ex nm as-num][
-		dg: charset "0123456789"
-		ex: [[#"e" | #"E"] opt [#"+" | #"-"] some dg]
-		nm: [opt #"-" some dg opt [#"." some dg] opt ex]
+	number-digit: charset "0123456789"
+	number-exponent: [[#"e" | #"E"] opt [#"+" | #"-"] some number-digit]
+	number-rule: [opt #"-" some number-digit opt [#"." some number-digit] opt number-exponent]
 
-		as-num: func [val [string!]][
-			case [
-				not parse val [opt "-" some dg][to float! val]
-				not integer? try [val: to integer! val][to issue! val]
-				val [val]
-			]
+	as-number: func [value [string!]][
+		case [
+			not parse value [opt "-" some number-digit][to float! value]
+			not integer? try [value: to integer! value][to issue! value]
+			value [value]
 		]
-
-		[copy val nm (val: as-num val)]
 	]
 
-	string: use [ch es hx mp decode-surrogate decode][
-		ch: complement charset {\"}
-		hx: charset "0123456789ABCDEFabcdef"
-		mp: #(#"^"" "^"" #"\" "\" #"/" "/" #"b" "^H" #"f" "^L" #"r" "^M" #"n" "^/" #"t" "^-")
-		es: charset words-of mp
+	number: [copy current-value number-rule (current-value: as-number current-value)]
 
-		decode-surrogate: func [char [string!]][
-			char: debase/base char 16
-			#"^(10000)"
-				+ (shift/left 03FFh and to integer! take/part char 2 10)
-				+ (03FFh and to integer! char)
-		]
+	string-chars: complement charset {\"}
+	string-hex: charset "0123456789ABCDEFabcdef"
+	string-lookup: #(#"^"" "^"" #"\" "\" #"/" "/" #"b" "^H" #"f" "^L" #"r" "^M" #"n" "^/" #"t" "^-")
+	string-escapes: charset words-of string-lookup
 
-		decode: use [char escape][
-			escape: [
-				change [
-					#"\" [
-						char: es (char: select mp char/1)
-						|
-						#"u" copy char [
-							#"d" [#"8" | #"9" | #"a" | #"b"] 2 hx
-							"\u"
-							#"d" [#"c" | #"d" | #"e" | #"f"] 2 hx
-						] (
-							char: decode-surrogate head remove remove skip char 4
-						)
-						|
-						#"u" copy char 4 hx (
-							char: to char! to integer! to issue! char
-						)
-					]
-				] (char)
-			]
-
-			func [text [string! none!]][
-				either none? text [make string! 0][
-					all [parse text [any [to "\" escape] to end] text]
-				]
-			]
-		]
-
-		[#"^"" copy val [any [some ch | #"\" [#"u" 4 hx | es]]] #"^"" (val: decode val)]
+	hex-to-integer: func [part [string!]][
+		to integer! debase/base part 16
 	]
 
-	array: use [list][
-		list: [space opt [value any [comma value]] space]
-
-		[#"[" new-child list #"]" neaten-one to-parent]
+	string-decode-surrogate: func [high [string!] low [string!]][
+		#"^(10000)"
+			+ (shift/left 03FFh and hex-to-integer high 10)
+			+ (03FFh and hex-to-integer low)
 	]
+
+	string-part: string-pair-high: string-pair-low: none
+
+	string-rule: [
+		string-mark:
+		some string-chars string-to: (append/part current-value string-mark string-to)
+		|
+		#"\" [
+			string-escapes (
+				append current-value select string-lookup string-mark/2
+			)
+			|
+			#"u" copy string-pair-high [#"d" [#"8" | #"9" | #"a" | #"b"] 2 string-hex]
+			"\u" copy string-pair-low [#"d" [#"c" | #"d" | #"e" | #"f"] 2 string-hex]
+			(append current-value string-decode-surrogate string-pair-high string-pair-low)
+			|
+			#"u" copy string-part 4 string-hex (
+				append current-value to char! hex-to-integer string-part
+			)
+		]
+	]
+
+	string: [
+		#"^"" (current-value: make string! 1024)
+		any [string-from: string-rule]
+		#"^""
+	]
+
+	array-elements: [space opt [value any [comma value]] space]
+	array: [#"[" new-child array-elements #"]" neaten-one to-parent]
 
 	_content: [#"{" space {"_content"} space #":" space value space "}"] ; Flickr
 
-	object: use [name list as-map][
-		name: [
-			string space #":" space (
-				emit either is-flat [
-					to tag! val
-				][
-					any [
-						to-word val
-						val
-					]
+	object-name: [
+		string space #":" space (
+			emit either is-flat [
+				to tag! current-value
+			][
+				any [
+					to-word current-value
+					current-value
 				]
-			)
-		]
-		list: [space opt [name value any [comma name value]] space]
-		as-map: [(unless is-flat [here: change back here make map! pick back here 1])]
-
-		[#"{" new-child list #"}" neaten-two to-parent as-map]
+			]
+		)
 	]
 
-	ident: use [initial ident][
-		initial: charset ["$_" #"a" - #"z" #"A" - #"Z"]
-		ident: union initial charset [#"0" - #"9"]
-
-		[initial any ident]
+	object-members: [
+		space opt [
+			object-name value
+			any [comma object-name value]
+		] space
 	]
+
+	object-as-map: [
+		(unless is-flat [here: change back here make map! pick back here 1])
+	]
+
+	object-rule: [#"{" new-child object-members #"}" neaten-two to-parent object-as-map]
+
+	ident-initial: charset ["$_" #"a" - #"z" #"A" - #"Z"]
+	ident-chars: union ident-initial charset [#"0" - #"9"]
+
+	ident: [ident-initial any ident-chars]
 
 	value: [
 		  "null" (emit none)
 		| "true" (emit true)
 		| "false" (emit false)
-		| number (emit val)
-		| string (emit val)
+		| number (emit current-value)
+		| string (emit current-value)
 		| _content
 		| array
-		| object
+		| object-rule
 	]
 
-	func [
-		"Convert a JSON string to Red data"
-		json [string!] "JSON string"
-		/flat "Objects are imported as tag-value pairs"
-		/padded "Loads JSON data wrapped in a JSONP envelope"
-	][
-		is-flat: :flat
-		tree: here: make block! 0
+	json-rule: [space opt value space]
+	padded-json-rule: [space ident space #"(" value #")" space opt #";" space]
 
-		either parse json either padded [
-			[space ident space "(" space opt value space ")" opt ";" space]
-		][
-			[space opt value space]
-		][
-			pick tree 1
+	load-json: func [json [string!] flat [logic!] padded [logic!]][
+		is-flat: :flat
+		tree: here: make block! 16
+
+		either parse json either padded [padded-json-rule][json-rule][
+			take tree
 		][
 			do make error! "Not a valid JSON string"
 		]
 	]
 ]
 
-to-json: use [
-	json emit emit-part stack is-pretty indent colon circular unknown
-	
-	escape emit-string emit-issue emit-date
-	emit-array emit-object emit-value
-][
+json-emitter: make object! [
+	json: is-pretty: value: none
+
 	emit: func [data][repend json data]
 	emit-part: func [from [string!] to [string!]][
 		append/part json from to
@@ -294,45 +267,47 @@ to-json: use [
 		emit #"}"
 	]
 
-	emit-string: use [escapes chars emit-char][
-		escapes: #(#"^/" "\n" #"^M" "\r" #"^-" "\t" #"^"" "\^"" #"\" "\\")
-		chars: intersect chars: charset [#" " - #"~"] difference chars charset words-of escapes
+	string-escapes: #(#"^/" "\n" #"^M" "\r" #"^-" "\t" #"^"" "\^"" #"\" "\\")
+	string-chars: intersect string-chars: charset [#" " - #"~"] difference string-chars charset words-of string-escapes
 
-		emit-char: func [char [char!]][
-			emit ["\u" skip tail form to-hex to integer! char -4]
-		]
+	emit-char: func [char [char!]][
+		emit ["\u" skip tail form to-hex to integer! char -4]
+	]
 
-		func [
-			value [any-type!]
-			/local mark extent
+	emit-string: function [
+		value [any-type!]
+		/local mark extent
+	][
+		value: switch/default type?/word value [
+			string! [value]
+			get-word! set-word! [to string! to word! value]
+			binary! [enbase value]
 		][
-			value: switch/default type?/word value [
-				string! [value]
-				get-word! set-word! [to string! to word! value]
-				binary! [enbase value]
-			][
-				to string! value
-			]
-
-			emit #"^""
-			parse value [
-				any [
-					  mark: some chars extent: (emit-part mark extent)
-					| skip (
-						case [
-							find escapes mark/1 [emit select escapes mark/1]
-							mark/1 < 10000h [emit-char mark/1]
-							mark/1 [ ; surrogate pairs
-								emit-char mark/1 - 10000h / 400h + D800h
-								emit-char mark/1 - 10000h // 400h + DC00h
-							]
-							/else [emit "\uFFFD"]
-						]
-					)
-				]
-			]
-			emit #"^""
+			to string! value
 		]
+
+		emit #"^""
+		parse value [
+			any [
+				  mark: some string-chars extent: (emit-part mark extent)
+				| skip (
+					case [
+						find string-escapes first mark [
+							emit select string-escapes first mark
+						]
+						mark/1 < 65536 [
+							emit-char first mark
+						]
+						mark/1 [ ; surrogate pairs
+							emit-char mark/1 - 65536 / 1024 + 55296
+							emit-char mark/1 - 65536 // 1024 + 56320
+						]
+						/else [emit "\uFFFD"]
+					]
+				)
+			]
+		]
+		emit #"^""
 	]
 
 	emit-date: func [value [date!] /local second][
@@ -367,17 +342,15 @@ to-json: use [
 		emit #"^""
 	]
 
-	emit-issue: use [digit number][
-		digit: charset "0123456789"
-		number: [opt #"-" some digit]
+	issue-digit: charset "0123456789"
+	issue-number: [opt #"-" some issue-digit]
 
-		func [value [issue!]][
-			value: next mold value
-			either parse value number [
-				emit value
-			][
-				emit-string value
-			]
+	emit-issue: function [value [issue!]][
+		value: next mold value
+		either parse value issue-number [
+			emit value
+		][
+			emit-string value
 		]
 	]
 
@@ -386,7 +359,6 @@ to-json: use [
 			get-word? :value
 			get-path? :value
 		][
-			; probe "GETTING"
 			set/any 'value take reduce reduce [value]
 		]
 
@@ -454,17 +426,30 @@ to-json: use [
 		json
 	]
 
-	func [
-		"Convert a Red value to JSON string"
-		item [any-type!] "Red value to convert"
-		/pretty "Format Output"
-	][
+	to-json: func [value [any-type!] pretty [logic!]][
 		is-pretty: :pretty
 		indent: pick ["^/" ""] is-pretty
 		colon: pick [": " ":"] is-pretty
 
 		clear stack
 		json: make string! 1024
-		emit-value item
+		emit-value value
 	]
+]
+
+load-json: func [
+	"Convert a JSON string to Red data"
+	json [string!] "JSON string"
+	/flat "Objects are imported as tag-value pairs"
+	/padded "Loads JSON data wrapped in a JSONP envelope"
+][
+	json-loader/load-json json flat padded
+]
+
+to-json: func [
+	"Convert a Red value to JSON string"
+	value [any-type!] "Red value to convert"
+	/pretty "Format Output"
+][
+	json-emitter/to-json :value pretty
 ]
