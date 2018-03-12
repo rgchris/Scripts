@@ -159,7 +159,7 @@ to-webform: use [
 	reference: [
 		some [
 			here: get-word!
-			(change/only here attempt [get/opt here/1])
+			(change/only here get here/1)
 			| skip
 		]
 	]
@@ -199,7 +199,7 @@ to-webform: use [
 		clear path
 		webform: make string! 0
 		data: either object? data [body-of data][copy data]
-		ruby-style?: truthy? :ruby-style
+		ruby-style?: did :ruby-style
 
 		case [
 			not parse copy data object [
