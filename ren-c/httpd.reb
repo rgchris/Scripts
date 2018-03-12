@@ -3,7 +3,7 @@ Rebol [
 	Author: "Christopher Ross-Gill"
 	Date: 23-Feb-2017
 	File: %httpd.reb
-	Home: _
+	Home: https://github.com/rgchris/Scripts
 	Version: 0.3.1
 	Purpose: "An elementary Web Server scheme for creating fast prototypes"
 	Rights: http://opensource.org/licenses/Apache-2.0
@@ -40,7 +40,7 @@ sys/make-scheme [
 			switch event/type [
 				read [
 					client/locals/instance: me + 1
-					print rejoin ["[" client/locals/instance "]"]
+					; print rejoin ["[" client/locals/instance "]"]
 					case [
 						not client/locals/parent/locals/open? [
 							close client
@@ -57,7 +57,7 @@ sys/make-scheme [
 						]
 					]
 
-					false
+					client
 				]
 
 				wrote [
@@ -80,7 +80,14 @@ sys/make-scheme [
 					]
 				]
 
-				(print ["Client Event: " uppercase form event/type])
+				close [
+					close client
+				]
+
+				(
+					print ["Unexpected Client Event:" uppercase form event/type]
+					client
+				)
 			]
 		]
 	]
