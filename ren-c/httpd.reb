@@ -4,7 +4,7 @@ Rebol [
 	Date: 11-Mar-2018
 	File: %httpd.reb
 	Home: https://github.com/rgchris/Scripts
-	Version: 0.3.1
+	Version: 0.3.1.1
 	Purpose: "An elementary Web Server scheme for creating fast prototypes"
 	Rights: http://opensource.org/licenses/Apache-2.0
 	Type: module
@@ -363,13 +363,14 @@ sys/make-scheme [
 					]
 				]
 
-				keep spaced ["HTTP/1.0" response/status select status-codes response/status]
-				keep spaced ["^/Content-Type:" response/type]
-				keep spaced ["^/Content-Length:" length-of response/content]
+				keep spaced ["HTTP/1.1" response/status select status-codes response/status]
+				keep spaced ["^M^/Content-Type:" response/type]
+				keep spaced ["^M^/Content-Length:" length-of response/content]
+				keep spaced ["^M^/Connection:" "close"]
 				if response/location [
-					keep spaced ["^/Location:" response/location]
+					keep spaced ["^M^/Location:" response/location]
 				]
-				keep "^/^/"
+				keep "^M^/^M^/"
 			]
 		]
 
@@ -403,19 +404,26 @@ sys/make-scheme [
 		;; But let increase chunk size
 		;; to see if that bug exists again!
 		case [
-			empty? port/locals/wire [_]
+			empty? port/locals/wire [
+				close port ; just enforcing Connection: close for now
+				_
+			]
 
 			error? outcome: trap [
 				write port take/part port/locals/wire 32'000 ; 2'000'000
 			][
 				;; only mask some errors:
-				either all [
+				all [
 					outcome/code = 5020
 					outcome/id = 'write-error
 					find [32 104] outcome/arg2
-				][
+				]
+				then [
 					net-utils/net-log ["Part or whole of response not sent to client: reason #" outcome/arg2]
-				][
+					clear port/locals/wire
+					_
+				]
+				else [
 					fail :outcome
 				]
 			]
