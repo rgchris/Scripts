@@ -1,7 +1,7 @@
 Rebol [
 	Title: "Web Server Scheme for Ren-C"
 	Author: "Christopher Ross-Gill"
-	Date: 23-Feb-2017
+	Date: 11-Mar-2018
 	File: %httpd.reb
 	Home: https://github.com/rgchris/Scripts
 	Version: 0.3.1
@@ -10,14 +10,17 @@ Rebol [
 	Type: module
 	Name: rgchris.httpd
 	History: [
-		23-Feb-2017 0.3.0 "Reworked to support KILL?"
+		11-Mar-2018 0.3.1 "Reworked to support KILL?"
 		23-Feb-2017 0.3.0 "Adapted from Rebol 2"
 		06-Feb-2017 0.2.0 "Include HTTP Parser/Dispatcher"
 		12-Jan-2017 0.1.0 "Original Version"
 	]
 ]
 
-net-utils: reduce ['net-log _]
+net-utils: reduce [
+	; 'net-log proc [message [block! string!]][print block? message then [unspaced message] else [message]]
+	'net-log _
+]
 
 as-string: func [binary [binary!] /local mark][
 	mark: binary
@@ -40,7 +43,7 @@ sys/make-scheme [
 			switch event/type [
 				read [
 					client/locals/instance: me + 1
-					; print rejoin ["[" client/locals/instance "]"]
+					net-utils/net-log ["Instance [" client/locals/instance "]"]
 					case [
 						not client/locals/parent/locals/open? [
 							close client
@@ -85,7 +88,7 @@ sys/make-scheme [
 				]
 
 				(
-					print ["Unexpected Client Event:" uppercase form event/type]
+					net-utils/net-log ["Unexpected Client Event: " uppercase form event/type]
 					client
 				)
 			]
@@ -118,9 +121,16 @@ sys/make-scheme [
 		server/locals/handler: procedure [
 			request [object!]
 			response [object!]
-		] case [
-			block? server/spec/actions [server/spec/actions]
-			true [default-response]
+		] compose [
+			render: get in response 'render
+			redirect: get in response 'redirect
+			print: get in response 'print
+
+			(
+				block? server/spec/actions
+					then [server/spec/actions]
+					else [default-response]
+			)
 		]
 
 		server/locals/subport: make port! [scheme: 'tcp]
@@ -164,7 +174,7 @@ sys/make-scheme [
 
 	actor: [
 		open: func [server [port!]][
-			; print ["Server running on port:" server/spec/port-id]
+			net-utils/net-log ["Server running on port no. " server/spec/port-id]
 			open server/locals/subport
 			server/locals/open?: yes
 			server
@@ -189,7 +199,7 @@ sys/make-scheme [
 		action: headers: http-headers: _
 		oauth: target: binary: content: length: timeout: _
 		type: 'application/x-www-form-urlencoded
-		server-software: rejoin [
+		server-software: unspaced [
 ;		   system/script/header/title " v" system/script/header/version " "
 			"Rebol/" system/product " v" system/version
 		]
@@ -211,7 +221,7 @@ sys/make-scheme [
 		kill?: false
 		close?: true
 
-		render: func [response [string!]][
+		render: func [response [string! binary!]][
 			status: 200
 			content: response
 		]
@@ -220,6 +230,11 @@ sys/make-scheme [
 			status: 200
 			content: response
 			type: "text/plain"
+		]
+
+		redirect: [target [url!] /as status [integer!]][
+			status: any [:status 301]
+			location: target
 		]
 	]
 
@@ -348,18 +363,17 @@ sys/make-scheme [
 					]
 				]
 
-				keep reform ["HTTP/1.0" response/status select status-codes response/status]
-				keep reform ["^/Content-Type:" response/type]
-				keep reform ["^/Content-Length:" length? response/content]
+				keep spaced ["HTTP/1.0" response/status select status-codes response/status]
+				keep spaced ["^/Content-Type:" response/type]
+				keep spaced ["^/Content-Length:" length-of response/content]
 				if response/location [
-					keep reform ["^/Location:" response/location]
+					keep spaced ["^/Location:" response/location]
 				]
 				keep "^/^/"
 			]
 		]
 
 		function [client [port!]][
-			; probe client/locals/wire
 			client/locals/response: response: make response-prototype []
 			client/locals/parent/locals/handler client/locals/request response
 
@@ -370,7 +384,7 @@ sys/make-scheme [
 						outcome/id = 'write-error
 						find [32 104] outcome/arg2
 					][
-						print join-of "Response headers not sent to client: reason #" outcome/arg2
+						net-utils/net-log ["Response headers not sent to client: reason #" outcome/arg2]
 					][
 						fail :outcome
 					]
@@ -400,7 +414,7 @@ sys/make-scheme [
 					outcome/id = 'write-error
 					find [32 104] outcome/arg2
 				][
-					print join-of "Part or whole of response not sent to client: reason #" outcome/arg2
+					net-utils/net-log ["Part or whole of response not sent to client: reason #" outcome/arg2]
 				][
 					fail :outcome
 				]
