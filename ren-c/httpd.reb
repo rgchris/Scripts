@@ -4,7 +4,7 @@ Rebol [
 	Date: 11-Mar-2018
 	File: %httpd.reb
 	Home: https://github.com/rgchris/Scripts
-	Version: 0.3.1.1
+	Version: 0.3.1.2
 	Purpose: "An elementary Web Server scheme for creating fast prototypes"
 	Rights: http://opensource.org/licenses/Apache-2.0
 	Type: module
@@ -36,62 +36,60 @@ sys/make-scheme [
 
 	spec: make system/standard/port-spec-head [port-id: actions: _]
 
-	wake-client: use [instance][
-		func [event [event!] /local client request response this][
-			client: event/port
+	wake-client: func [event [event!] /local client request response this][
+		client: event/port
 
-			switch event/type [
-				read [
-					client/locals/instance: me + 1
-					net-utils/net-log ["Instance [" client/locals/instance "]"]
-					case [
-						not client/locals/parent/locals/open? [
-							close client
-							client/locals/parent
-						]
-
-						find client/data #{0D0A0D0A} [
-							transcribe client
-							dispatch client
-						]
-
-						true [
-							read client
-						]
+		switch event/type [
+			read [
+				client/locals/instance: me + 1
+				net-utils/net-log ["Instance [" client/locals/instance "]"]
+				case [
+					not client/locals/parent/locals/open? [
+						close client
+						client/locals/parent
 					]
 
-					client
-				]
+					find client/data #{0D0A0D0A} [
+						transcribe client
+						dispatch client
+					]
 
-				wrote [
-					case [
-						send-chunk client [
-							client
-						]
-
-						client/locals/response/kill? [
-							close client
-							wake-up client/locals/parent make event! [
-								type: 'close
-								port: client/locals/parent
-							]
-						]
-
-						true [
-							client
-						]
+					true [
+						read client
 					]
 				]
 
-				close [
-					close client
-				]
-
-				(
-					net-utils/net-log ["Unexpected Client Event: " uppercase form event/type]
-					client
-				)
+				client
 			]
+
+			wrote [
+				case [
+					send-chunk client [
+						client
+					]
+
+					client/locals/response/kill? [
+						close client
+						wake-up client/locals/parent make event! [
+							type: 'close
+							port: client/locals/parent
+						]
+					]
+
+					true [
+						client
+					]
+				]
+			]
+
+			close [
+				close client
+			]
+
+			(
+				net-utils/net-log ["Unexpected Client Event: " uppercase form event/type]
+				client
+			)
 		]
 	]
 
