@@ -4,12 +4,13 @@ Rebol [
 	Date: 11-Mar-2018
 	File: %httpd.reb
 	Home: https://github.com/rgchris/Scripts
-	Version: 0.3.1.2
+	Version: 0.3.2
 	Purpose: "An elementary Web Server scheme for creating fast prototypes"
 	Rights: http://opensource.org/licenses/Apache-2.0
 	Type: module
 	Name: rgchris.httpd
 	History: [
+		14-Mar-2018 0.3.2 "Closes connections (TODO: support Keep-Alive)"
 		11-Mar-2018 0.3.1 "Reworked to support KILL?"
 		23-Feb-2017 0.3.0 "Adapted from Rebol 2"
 		06-Feb-2017 0.2.0 "Include HTTP Parser/Dispatcher"
@@ -41,8 +42,8 @@ sys/make-scheme [
 
 		switch event/type [
 			read [
-				client/locals/instance: me + 1
-				net-utils/net-log ["Instance [" client/locals/instance "]"]
+				net-utils/net-log ["Instance [" client/locals/instance: me + 1 "]"]
+
 				case [
 					not client/locals/parent/locals/open? [
 						close client
@@ -74,6 +75,10 @@ sys/make-scheme [
 							type: 'close
 							port: client/locals/parent
 						]
+					]
+
+					client/locals/response/close? [
+						close client
 					]
 
 					true [
@@ -162,8 +167,7 @@ sys/make-scheme [
 					true
 				]
 
-				; (event/port)
-				(false)
+				(event/port)
 			]
 		]
 
@@ -348,7 +352,7 @@ sys/make-scheme [
 		]
 
 		build-header: func [response [object!]][
-			append make binary! 0 collect [
+			append make binary! 1024 spaced collect [
 				case/all [
 					not find status-codes response/status [
 						response/status: 500
@@ -361,14 +365,16 @@ sys/make-scheme [
 					]
 				]
 
-				keep spaced ["HTTP/1.1" response/status select status-codes response/status]
-				keep spaced ["^M^/Content-Type:" response/type]
-				keep spaced ["^M^/Content-Length:" length-of response/content]
-				keep spaced ["^M^/Connection:" "close"]
-				if response/location [
-					keep spaced ["^M^/Location:" response/location]
+				keep ["HTTP/1.1" response/status select status-codes response/status]
+				keep [cr lf "Content-Type:" response/type]
+				keep [cr lf "Content-Length:" length-of response/content]
+				if response/close? [
+					keep [cr lf "Connection:" "close"]
 				]
-				keep "^M^/^M^/"
+				if response/location [
+					keep [cr lf "Location:" response/location]
+				]
+				keep [cr lf cr lf]
 			]
 		]
 
@@ -402,10 +408,7 @@ sys/make-scheme [
 		;; But let increase chunk size
 		;; to see if that bug exists again!
 		case [
-			empty? port/locals/wire [
-				close port ; just enforcing Connection: close for now
-				_
-			]
+			empty? port/locals/wire [_]
 
 			error? outcome: trap [
 				write port take/part port/locals/wire 32'000 ; 2'000'000
