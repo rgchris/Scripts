@@ -4,12 +4,13 @@ Rebol [
 	Date: 11-Mar-2018
 	File: %httpd.reb
 	Home: https://github.com/rgchris/Scripts
-	Version: 0.3.2
+	Version: 0.3.3
 	Purpose: "An elementary Web Server scheme for creating fast prototypes"
 	Rights: http://opensource.org/licenses/Apache-2.0
 	Type: module
 	Name: rgchris.httpd
 	History: [
+		16-Mar-2018 0.3.3 "Add COMPRESS? option"
 		14-Mar-2018 0.3.2 "Closes connections (TODO: support Keep-Alive)"
 		11-Mar-2018 0.3.1 "Reworked to support KILL?"
 		23-Feb-2017 0.3.0 "Adapted from Rebol 2"
@@ -222,6 +223,7 @@ sys/make-scheme [
 		length: 0
 		kill?: false
 		close?: true
+		compress?: false
 
 		render: func [response [string! binary!]][
 			status: 200
@@ -368,11 +370,16 @@ sys/make-scheme [
 				keep ["HTTP/1.1" response/status select status-codes response/status]
 				keep [cr lf "Content-Type:" response/type]
 				keep [cr lf "Content-Length:" length-of response/content]
-				if response/close? [
-					keep [cr lf "Connection:" "close"]
-				]
-				if response/location [
-					keep [cr lf "Location:" response/location]
+				case/all [
+					response/compress? [
+						keep [cr lf "Content-Encoding:" "gzip"]
+					]
+					response/location [
+						keep [cr lf "Location:" response/location]
+					]
+					response/close? [
+						keep [cr lf "Connection:" "close"]
+					]
 				]
 				keep [cr lf cr lf]
 			]
@@ -381,6 +388,10 @@ sys/make-scheme [
 		function [client [port!]][
 			client/locals/response: response: make response-prototype []
 			client/locals/parent/locals/handler client/locals/request response
+
+			if response/compress? [
+				response/content: compress/gzip response/content
+			]
 
 			case [
 				error? outcome: trap [write client hdr: build-header response][
