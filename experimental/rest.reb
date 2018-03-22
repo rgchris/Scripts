@@ -172,7 +172,7 @@ use [prepare fetch transcribe][
 	]
 
 	transcribe: use [
-		response-code header-feed header-name header-part
+		response-code space header-feed header-name header-part
 		response-prototype header-prototype
 	][
 		response-code: use [digit][
