@@ -41,7 +41,7 @@ clean: use [
 		| utf-2 utf-b | utf-3 2 utf-b | utf-4 3 utf-b
 		| change here: skip (
 			case [
-				select codepoints here/1 [codepoints/(here/1)]
+				did select codepoints here/1 [codepoints/(here/1)]
 				here/1 > 191 [reduce [195 here/1 and+ 191]]
 				here/1 > 158 [reduce [194 here/1]]
 			] else [[239 191 189]]
