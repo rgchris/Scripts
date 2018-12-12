@@ -1,14 +1,32 @@
-REBOL [
+Rebol [
 	Title: "Make Feed"
-	File: %make-feed.r
-	Version: 1.0.0
-	Date: 12-Jun-2013
 	Author: "Christopher Ross-Gill"
+	Date: 12-Jun-2013
+	File: %make-feed.r3
+	Version: 1.0.0
 	Purpose: "Create an Atom Feed."
-	Example: "See Below"
 	Needs: [
-		http://reb4.me/r3/form-date
-		http://reb4.me/r3/rsp
+		%form-date.r3
+		%rsp.r3
+	]
+	Usage: [
+		make-feed reduce [
+			make object! [
+				Title: "Feed Name"
+				ID: Home: http://www.example.com/
+				Link: http://www.example.com/our.feed
+				Subtitle: "Describes this Feed"
+				Updated: none
+			]
+
+			make object! [
+				Title: "Journal Éntry title...."
+				ID: Link: http://www.example.com/some/page/or/other
+				Author: "Somebody"
+				Published: Modified: 30-Dec-2004/12:00-9:00
+				Description: {Entry HTML goes here...}
+			]
+		]
 	]
 ]
 
@@ -45,23 +63,5 @@ make-feed: use [feed.rsp entry.rsp][
 	make-feed: func [feed [block!] /local header][
 		header: take feed: copy feed
 		render/with feed.rsp [header feed entry.rsp]
-	]
-]
-
-print make-feed reduce [
-	make object! [
-		Title: "Feed Name"
-		ID: Home: http://www.example.com/
-		Link: http://www.example.com/our.feed
-		Subtitle: "Describes this Feed"
-		Updated: none
-	]
-
-	make object! [
-		Title: "Journal Éntry title...."
-		ID: Link: http://www.example.com/some/page/or/other
-		Author: "Somebody"
-		Published: Modified: 30-Dec-2004/12:00-9:00
-		Description: {Entry HTML goes here...}
 	]
 ]
