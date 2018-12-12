@@ -3,18 +3,18 @@ Rebol [
 	Author: "Christopher Ross-Gill"
 	Date: 6-Sep-2015
 	Home: http://scripts.rebol.info/scripts/form-date,docs
-	File: %form-date.r
+	File: %form-date.r3
 	Version: 1.1.0
 	Purpose: {Return formatted date string using strftime style format specifiers}
 	Rights: http://opensource.org/licenses/Apache-2.0
-	Type: 'module
-	Name: 'rgchris.form-date
+	Type: module
+	Name: rgchris.form-date
 	Exports: [form-date form-time]
 	History: [
 		06-Sep-2015 1.1.0 "Change to use REWORD; Deprecate /GMT"
 		12-Jun-2013 1.0.0 "Ported from Rebol 2"
 	]
-	Comment: {Extracted from the QuarterMaster web framework}
+	Notes: {Extracted from the QuarterMaster web framework}
 ]
 
 pad: func [text length [integer!] /with padding [char!]][
