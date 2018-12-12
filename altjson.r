@@ -29,7 +29,6 @@ Rebol [
 		22-May-2005 0.1.0 "Original Version"
 	]
 	Notes: {
-		- Simple Escaping
 		- Converts date! to RFC 3339 Date String
 	}
 ]
@@ -41,7 +40,7 @@ load-json: use [
 	branch: make block! 10
 
 	emit: func [val][here: insert/only here val]
-	new-child: [(insert/only branch insert/only here here: copy [])]
+	new-child: [(insert/only branch insert/only here here: make block! 10)]
 	to-parent: [(here: take branch)]
 	neaten: [
 		(new-line/all head here true)
@@ -51,7 +50,7 @@ load-json: use [
 	to-word: use [word1 word+][
 		; upper ranges borrowed from AltXML
 		word1: charset [
-			"!&*.=?ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz|~"
+			"!&*=?ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz|~"
 			#"^(C0)" - #"^(D6)" #"^(D8)" - #"^(F6)" #"^(F8)" - #"^(02FF)"
 			#"^(0370)" - #"^(037D)" #"^(037F)" - #"^(1FFF)" #"^(200C)" - #"^(200D)"
 			#"^(2070)" - #"^(218F)" #"^(2C00)" - #"^(2FEF)" #"^(3001)" - #"^(D7FF)"
@@ -185,7 +184,7 @@ load-json: use [
 		]
 
 		is-flat: :flat
-		tree: here: copy []
+		tree: here: make block! 0
 
 		either parse json either padded [
 			[space ident space "(" space opt value space ")" opt ";" space]
@@ -213,7 +212,7 @@ to-json: use [
 		encode: func [here][
 			change/part here any [
 				select mp here/1
-				join "\u" skip tail form to-hex to integer! here/1 -4
+				rejoin ["\u" skip tail form to-hex to integer! here/1 -4]
 			] 1
 		]
 
@@ -232,7 +231,8 @@ to-json: use [
 
 	emit-date: use [pad second][
 		pad: func [part length][part: to string! part head insert/dup part "0" length - length? part]
-		[(
+
+		quote (
 			emits rejoin collect [
 				keep reduce [pad here/1/year 4 "-" pad here/1/month 2 "-" pad here/1/day 2]
 				if here/1/time [
@@ -254,7 +254,7 @@ to-json: use [
 					]
 				]
 			]
-		)]
+		)
 	]
 
 	lookup: [
@@ -304,7 +304,7 @@ to-json: use [
 	]
 
 	func [data][
-		json: make string! ""
+		json: make string! 1024
 		if parse compose/only [(data)][here: value][json]
 	]
 ]
