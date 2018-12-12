@@ -1,12 +1,14 @@
 [
 
-REBOL [
+Rebol [
 	Title: "Service-oriented HTTP Protocol"
-	Date: 24-Jul-2013
 	Author: "Christopher Ross-Gill"
-	; Type: 'module
+	Date: 24-Jul-2013
+	Home: http://ross-gill.com/page/REST_Protocol
+	File: %rest.r3
 	Version: 0.0.1
-	File: %rest.r
+	Type: module
+	Name: rgchris.rest
 	Usage: [
 		read [
 			scheme: 'rest
@@ -22,6 +24,10 @@ REBOL [
 			some data
 		]
 	]
+	Notes: {
+		Rebol 3 Alpha does not have a working CALL and thus this module as-is
+		cannot sit upon the shell version of cURL.
+	}
 ]
 
 sys/make-scheme [
