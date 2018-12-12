@@ -1,13 +1,13 @@
 Rebol [
-    Title: "Web Server Scheme for Rebol 3"
+    Title: "Web Server Scheme"
     Author: "Christopher Ross-Gill"
     Date: 23-Feb-2017
-    File: %httpd.reb
+    File: %httpd.r3
     Version: 0.3.0
     Purpose: "An elementary Web Server scheme for creating fast prototypes"
     Rights: http://opensource.org/licenses/Apache-2.0
-    ; Type: 'module
-    ; Name: 'rgchris.httpd
+    Type: module
+    Name: rgchris.httpd
     History: [
         23-Feb-2017 0.3.0 "Adapted from Rebol 2"
         06-Feb-2017 0.2.0 "Include HTTP Parser/Dispatcher"
@@ -19,12 +19,9 @@ Rebol [
     }
 ]
 
-do <r3-legacy>
-
-attempt [_: none] ; for Rebolsource Rebol 3 Compatibility
 invalid-utf8?: any [:invalid-utf? :invalid-utf8?]
 
-net-utils: reduce ['net-log _]
+net-utils: reduce ['net-log none]
 
 as-string: func [binary [binary!] /local mark][
     mark: binary
@@ -34,15 +31,19 @@ as-string: func [binary [binary!] /local mark][
     to string! binary
 ]
 
+increment: func ['name [word!]][
+    also get name set name add get name 1
+]
+
 sys/make-scheme [
-    Title: "HTTP Server"
-    Name: 'httpd
+    title: "HTTP Server"
+    name: 'httpd
 
-    Spec: make system/standard/port-spec-head [port-id: does: _]
+    spec: make system/standard/port-spec-head [port-id: does: none]
 
-    Default-Response: [probe request/action]
+    default-response: [probe request/action]
 
-    Init: func [server [port!] /local spec port-id does][
+    init: func [server [port!] /local spec port-id does][
         spec: server/spec
 
         case [
@@ -61,38 +62,57 @@ sys/make-scheme [
         ]
 
         server/locals: make object! [
-            handler: func [
-                request [object!]
-                response [object!]
-            ] case [
-                function? get in server 'awake [body-of get in server 'awake]
-                block? server/awake [server/awake]
-                block? server/spec/does [server/spec/does]
-                true [default-response]
+            handler: subport: none
+        ]
+
+        server/locals/handler: func [
+            request [object!]
+            response [object!]
+        ] case [
+            function? get in server 'awake [body-of get in server 'awake]
+            block? server/awake [server/awake]
+            block? server/spec/does [server/spec/does]
+            true [default-response]
+        ]
+
+        server/locals/subport: make port! [scheme: 'tcp]
+        server/locals/subport/spec/port-id: spec/port-id
+        server/locals/subport/locals: make object! [
+            request: response: none
+            parent: :server
+        ]
+
+        server/locals/subport/awake: compose/deep [
+            if event/type = 'accept [
+                client: first event/port
+                client/awake: :wake-client
+                client/locals: make object! [
+                    request: response: none
+                    wire: make binary! 1024
+                    parent: (server)
+                ]
+                read client
             ]
 
-            subport: make port! [scheme: 'tcp]
-            subport/spec/port-id: spec/port-id
-            subport/awake: prepare-listener server
-            subport/locals: make object! [
-                request: response: _
-                parent: :server
-            ]
+            ; event
+            false
         ]
+
+        server/locals/subport/awake: func [event [event!] /local client] server/locals/subport/awake
 
         server
     ]
 
-    Start: func [port [port!]][
+    start: func [port [port!]][
         append system/ports/wait-list port
     ]
 
-    Stop: func [port [port!]][
+    stop: func [port [port!]][
         remove find system/ports/wait-list port
         close port
     ]
 
-    Actor: [
+    actor: [
         Open: func [server [port!]][
             print ["Server running on port:" server/spec/port-id]
             start server/locals/subport
@@ -104,36 +124,36 @@ sys/make-scheme [
         ]
     ]
 
-    Request-Prototype: make object! [
+    request-prototype: make object! [
         version: 1.1
         method: "GET"
-        action: headers: http-headers: _
-        oauth: target: binary: content: length: timeout: _
+        action: headers: http-headers: none
+        oauth: target: binary: content: length: timeout: none
         type: 'application/x-www-form-urlencoded
         server-software: rejoin [
             system/script/header/title " v" system/script/header/version " "
             "Rebol/" system/product " v" system/version
         ]
-        server-name: gateway-interface: _
+        server-name: gateway-interface: none
         server-protocol: "http"
         server-port: request-method: request-uri:
         path-info: path-translated: script-name: query-string:
         remote-host: remote-addr: auth-type:
-        remote-user: remote-ident: content-type: content-length: _
-        error: _
+        remote-user: remote-ident: content-type: content-length: none
+        error: none
     ]
 
-    Response-Prototype: make object! [
+    response-prototype: make object! [
         status: 404
         content: "Not Found"
-        location: _
+        location: none
         type: "text/html"
         length: 0
         kill?: false
         close?: true
     ]
 
-    Wake-Client: use [instance][
+    wake-client: use [instance][
         instance: 0
 
         func [event [event!] /local client request response this][
@@ -141,7 +161,7 @@ sys/make-scheme [
 
             switch/default event/type [
                 read [
-                    ++ instance
+                    increment instance
                     ; print rejoin ["[" instance "]"]
 
                     either find client/data #{0D0A0D0A} [
@@ -168,26 +188,7 @@ sys/make-scheme [
         ]
     ]
 
-    Prepare-Listener: func [server [port!]][
-        func [event [event!] /local client] compose/deep [
-            either event/type = 'accept [
-                client: first event/port
-                client/awake: :wake-client
-                client/locals: make object! [
-                    request: response: _
-                    wire: make binary! 0
-                    parent: (server)
-                    protect [request response wire parent]
-                ]
-                read client
-            ]
-
-            ; event
-            false
-        ]
-    ]
-
-    Transcribe: use [
+    transcribe: use [
         space request-action request-path request-query
         header-prototype header-feed header-name header-part
     ][
@@ -224,7 +225,7 @@ sys/make-scheme [
             Accept: "*/*"
             Connection: "close"
             User-Agent: rejoin ["Rebol/" system/product " " system/version]
-            Content-Length: Content-Type: Authorization: Range: _
+            Content-Length: Content-Type: Authorization: Range: none
         ]
 
         transcribe: func [
@@ -241,7 +242,7 @@ sys/make-scheme [
                     ] space
                     "HTTP/" copy version ["1.0" | "1.1"]
                     header-feed
-                    (headers: make block! [])
+                    (headers: make block! 10)
                     some [
                         copy name header-name ":" any " "
                         copy value header-part header-feed
@@ -268,7 +269,7 @@ sys/make-scheme [
                     server-port: query/mode client 'local-port
                     remote-addr: query/mode client 'remote-ip
 
-                    headers: make header-prototype http-headers: new-line/all/skip headers true 2
+                    headers: make header-prototype http-headers: new-line/skip headers true 2
 
                     type: if string? headers/Content-Type [
                         copy/part type: headers/Content-Type any [
@@ -284,14 +285,14 @@ sys/make-scheme [
 
                     net-utils/net-log action
                 ][
-                    ; action: target: request-method: query-string: binary: content: request-uri: _
+                    ; action: target: request-method: query-string: binary: content: request-uri: none
                     net-utils/net-log error: "Could Not Parse Request"
                 ]
             ]
         ]
     ]
 
-    Dispatch: use [status-codes][
+    dispatch: use [status-codes][
         status-codes: [
             200 "OK" 201 "Created" 204 "No Content"
             301 "Moved Permanently" 302 "Moved temporarily" 303 "See Other" 307 "Temporary Redirect"
@@ -327,11 +328,11 @@ sys/make-scheme [
         ]
     ]
 
-    Send-Chunk: func [port [port!]][
+    send-chunk: func [port [port!]][
            ;; Trying to send data >32'000 bytes at once will trigger R3's internal
            ;; chunking (which is buggy, see above). So we cannot use chunks >32'000
            ;; for our manual chunking.
-        either empty? port/locals/wire [_][
+        either empty? port/locals/wire [none][
             write port take/part port/locals/wire 32'000
         ]
     ]
