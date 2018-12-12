@@ -1,13 +1,16 @@
-REBOL [
+Rebol [
 	Title: "RSP Preprocessor"
-	Date: 12-Jun-2013
 	Author: "Christopher Ross-Gill"
-	Notes: "Extracted from QM"
+	Date: 12-Jun-2013
+	Home: http://ross-gill.com/page/RSP
+	File: %rsp.r3
 	Version: 0.4.0
-	File: %rsp.r
+	Purpose: {Rebol-embedded Markup}
+	Rights: http://opensource.org/licenses/Apache-2.0
 	Type: module
-	Name: rsp
+	Name: rgchris.rsp
 	Exports: [sanitize load-rsp render render-each]
+	Notes: "Extracted from QuarterMaster"
 ]
 
 sanitize: use [ascii html* extended][
@@ -21,7 +24,7 @@ sanitize: use [ascii html* extended][
 				| change #"<" "&lt;" | change #">" "&gt;" | change #"&" "&amp;"
 				| change #"^"" "&quot;" | remove #"^M"
 				| remove copy char extended (char: rejoin ["&#" to integer! char/1 ";"]) insert char
-				| remove copy char skip (char: rejoin ["#(" to integer! char/1 ")"]) insert char
+				| change skip "&#65533;"
 			]
 		]
 		any [text copy ""]
@@ -55,6 +58,7 @@ load-rsp: use [prototype to-set-block][
 					  "==" copy mk to "%>" (repend code ["prin sanitize form (" mk "^/)^/"])
 					| "=" copy mk to "%>" (repend code ["prin (" mk "^/)^/"])
 					| [#":" | #"!"] copy mk to "%>" (repend code ["prin build-tag [" mk "^/]^/"])
+					| #"#" to "%>" ; comment
 					| copy mk to "%>" (repend code [mk newline])
 					| (throw make error! "Expected '%>'")
 				] 2 skip
@@ -98,12 +102,19 @@ render-each: func [
 	'items [word! block!]
 	source [series!]
 	body [file! url! string!]
-	/with locals /local out
+	/with locals [object! block!]
 ][
-	out: copy ""
-	locals: append any [locals []] items: compose [(items)]
-	foreach :items source compose/only [
-		append out render/with body (locals)
+	locals: collect [
+		switch type?/word locals [
+			object! [keep words-of locals]
+			block! [keep locals]
+		]
+		keep items
 	]
-	return out
+
+	rejoin collect [
+		foreach :items source compose/only [
+			keep render/with body (locals)
+		]
+	]
 ]
