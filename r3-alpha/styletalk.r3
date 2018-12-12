@@ -1,12 +1,18 @@
 Rebol [
-	Title: "CSSR"
-	Purpose: "A Style Sheet Dialect that generates CSS"
-	Version: 0.1.7
-	Date: 17-Jun-2013
+	Title: "StyleTalk"
 	Author: "Christopher Ross-Gill"
-	Name: 'cssr
-	Type: 'module
+	Date: 17-Jun-2013
+	Home: http://recode.revault.org/wiki/CSSR
+	File: %styletalk.r3
+	Version: 0.1.8
+	Purpose: "A Style Sheet Dialect for Markup Languages"
+	Rights: http://opensource.org/licenses/Apache-2.0
+	Type: module
+	Name: rgchris.styletalk
 	Exports: [to-css]
+	History: [
+		17-Jun-2013 0.1.8 "Ported to Rebol 3 Alpha"
+	]
 ]
 
 to-css: use [ruleset parser ??][
@@ -33,7 +39,7 @@ ruleset: context [
 		enspace either value/4 [
 			["rgba(" value/1 "," value/2 "," value/3 "," either integer? value: value/4 / 255 [value][round/to value 0.01] ")"]
 		][
-			["rgb(" value/1 "," value/2 "," value/3")"]
+			["rgb(" value/1 "," value/2 "," value/3 ")"]
 		]
 	]
 
@@ -70,9 +76,9 @@ ruleset: context [
 
 	form-transform: func [transform [block!] /local name direction][
 		; [
-		; 	  'translate direction length
-		; 	| 'rotate angle opt ['origin percent percent]
-		; 	| 'scale [direction number | 1 2 number]
+		;	  'translate direction length
+		;	| 'rotate angle opt ['origin percent percent]
+		;	| 'scale [direction number | 1 2 number]
 		; ]
 
 		switch/default take transform [
@@ -253,6 +259,7 @@ parser: context [
 			[no bold] 'normal
 			[no italic] 'normal
 			[no underline] 'none
+			[no list style] 'none
 			[inline block] 'inline-block
 			[line height] 'line-height
 		][
@@ -374,7 +381,8 @@ parser: context [
 
 	; Each of the Properties fully BNFed
 	property: [
-		  mark box-model capture (emits 'display)
+		  'comment thru /comment
+		| mark box-model capture (emits 'display)
 		| mark 'border-box capture (emits 'box-sizing)
 		| 'min some [
 			  'width mark length capture (emits 'min-width)
@@ -531,8 +539,8 @@ parser: context [
 		] (emits 'background-image)
 
 		; | mark binary capture (emits 'background-image) any [
-		; 	  mark positions capture (emits 'background-position)
-		; 	| mark repeats capture (emits 'background-repeat)
+		;	  mark positions capture (emits 'background-position)
+		;	| mark repeats capture (emits 'background-repeat)
 		; ]
 		| mark image capture (emits 'background-image) any [
 			  mark positions capture (emits 'background-position)
