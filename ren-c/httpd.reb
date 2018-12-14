@@ -205,7 +205,7 @@ sys/make-scheme [
 
                 default [
                     fail ["HTTPd port does not reflect this property:" uppercase mold property]
-                )
+                ]
             ]
         ]
 
