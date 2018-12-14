@@ -1,5 +1,3 @@
-#!/usr/local/bin/ren-c ../test/httpd.test.reb
-
 Rebol [
     Title: "Web Server Scheme for Ren-C"
     Author: "Christopher Ross-Gill"
