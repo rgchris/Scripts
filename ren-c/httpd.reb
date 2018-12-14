@@ -1,15 +1,16 @@
 Rebol [
     Title: "Web Server Scheme for Ren-C"
     Author: "Christopher Ross-Gill"
-    Date: 11-Mar-2018
+    Date: 14-Dec-2018
     File: %httpd.reb
     Home: https://github.com/rgchris/Scripts
-    Version: 0.3.3
+    Version: 0.3.4
     Purpose: "An elementary Web Server scheme for creating fast prototypes"
     Rights: http://opensource.org/licenses/Apache-2.0
     Type: module
     Name: rgchris.httpd
     History: [
+        14-Dec-2018 0.3.4 "Add REFLECT handler (supports OPEN?); Redirect defaults to 303"
         16-Mar-2018 0.3.3 "Add COMPRESS? option"
         14-Mar-2018 0.3.2 "Closes connections (TODO: support Keep-Alive)"
         11-Mar-2018 0.3.1 "Reworked to support KILL?"
@@ -196,6 +197,18 @@ sys/make-scheme [
             server
         ]
 
+        reflect: func [server [port!] property [word!]][
+            switch property [
+                'open? [
+                    server/locals/open?
+                ]
+
+                default [
+                    fail ["HTTPd port does not reflect this property:" uppercase mold property]
+                )
+            ]
+        ]
+
         close: func [server [port!]] [
             server/awake: server/locals/subport/awake: _
             server/locals/open?: no
@@ -267,8 +280,10 @@ sys/make-scheme [
             type: "text/plain"
         ]
 
-        redirect: method [target [url!] /as status [integer!]] [
-            status: default [301] ; !!! initialized to 404, so never defaults?
+        redirect: method [target [url!] /as code [integer!]] [
+            status: code: default [303]
+            content: "Redirecting..."
+            type: "text/plain"
             location: target
         ]
     ]
@@ -433,6 +448,7 @@ sys/make-scheme [
                 if response/close? [
                     keep [cr lf "Connection:" "close"]
                 ]
+                keep [cr lf "Cache-Control:" "no-cache"]
                 keep [cr lf cr lf]
             ]
         ])
