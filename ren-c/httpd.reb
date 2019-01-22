@@ -454,7 +454,14 @@ sys/make-scheme [
         ])
     ][
         client/locals/response: response: make response-prototype []
-        client/locals/parent/locals/handler client/locals/request response
+
+        if object? client/locals/request [
+            client/locals/parent/locals/handler client/locals/request response
+        ]else [ ;; don't crash on bad request
+            response/status: 500
+            response/type: "text/html"
+            response/content: "Bad request."
+        ]
 
         if response/compress? [
             response/content: gzip response/content
