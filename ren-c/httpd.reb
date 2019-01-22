@@ -302,7 +302,7 @@ sys/make-scheme [
 
         request-query (use [chars] [
             chars: complement charset [#"^@" - #" "]
-            [some chars]
+            [any chars] ;; I need empty request .../? [@giuliolunati]
         ])
 
         header-feed ([newline | cr lf])
