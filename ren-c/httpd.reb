@@ -30,7 +30,7 @@ Rebol [
 net-utils: reduce [
     comment [
         'net-log proc [message [block! text!]] [
-            print <- either block? message [spaced message] [message]
+            print either block? message [spaced message] [message]
         ]
     ]
     'net-log _
@@ -385,7 +385,7 @@ sys/make-scheme [
             remote-addr: query/mode client 'remote-ip
 
             headers: make header-prototype
-                <- http-headers: new-line/skip headers true 2
+                http-headers: new-line/skip headers true 2
 
             type: try all [
                 text? type: headers/Content-Type
@@ -436,7 +436,7 @@ sys/make-scheme [
                 ]
 
                 keep ["HTTP/1.1" response/status
-                    <- select status-codes response/status]
+                    select status-codes response/status]
                 keep [cr lf "Content-Type:" response/type]
                 keep [cr lf "Content-Length:" length-of response/content]
                 if response/compress? [
