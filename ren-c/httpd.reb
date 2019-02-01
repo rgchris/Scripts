@@ -467,7 +467,7 @@ sys/make-scheme [
             response/content: gzip response/content
         ]
 
-        if error? outcome: trap [write client hdr: build-header response] [
+        if error? trap [outcome: write client hdr: build-header response] [
             all [
                 outcome/code = 5020
                 outcome/id = 'write-error
@@ -497,8 +497,8 @@ sys/make-scheme [
         case [
             empty? port/locals/wire [_]
 
-            error? outcome: trap [
-                write port take/part port/locals/wire 32'000 ; 2'000'000
+            error? trap [
+                outcome: write port take/part port/locals/wire 32'000 ; 2'000'000
             ][
                 ;; only mask some errors:
                 all [
