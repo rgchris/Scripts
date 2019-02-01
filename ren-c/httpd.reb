@@ -30,7 +30,7 @@ Rebol [
 net-utils: reduce [
     comment [
         'net-log proc [message [block! text!]] [
-            print <- either block? message [spaced message] [message]
+            print either block? message [spaced message] [message]
         ]
     ]
     'net-log _
@@ -302,7 +302,7 @@ sys/make-scheme [
 
         request-query (use [chars] [
             chars: complement charset [#"^@" - #" "]
-            [some chars]
+            [any chars] ;; I need empty request .../? [@giuliolunati]
         ])
 
         header-feed ([newline | cr lf])
@@ -385,7 +385,7 @@ sys/make-scheme [
             remote-addr: query/mode client 'remote-ip
 
             headers: make header-prototype
-                <- http-headers: new-line/skip headers true 2
+                http-headers: new-line/skip headers true 2
 
             type: try all [
                 text? type: headers/Content-Type
@@ -436,7 +436,7 @@ sys/make-scheme [
                 ]
 
                 keep ["HTTP/1.1" response/status
-                    <- select status-codes response/status]
+                    select status-codes response/status]
                 keep [cr lf "Content-Type:" response/type]
                 keep [cr lf "Content-Length:" length-of response/content]
                 if response/compress? [
@@ -454,13 +454,20 @@ sys/make-scheme [
         ])
     ][
         client/locals/response: response: make response-prototype []
-        client/locals/parent/locals/handler client/locals/request response
+
+        if object? client/locals/request [
+            client/locals/parent/locals/handler client/locals/request response
+        ]else [ ;; don't crash on bad request
+            response/status: 500
+            response/type: "text/html"
+            response/content: "Bad request."
+        ]
 
         if response/compress? [
             response/content: gzip response/content
         ]
 
-        if error? outcome: trap [write client hdr: build-header response] [
+        if error? trap [outcome: write client hdr: build-header response] [
             all [
                 outcome/code = 5020
                 outcome/id = 'write-error
@@ -490,8 +497,8 @@ sys/make-scheme [
         case [
             empty? port/locals/wire [_]
 
-            error? outcome: trap [
-                write port take/part port/locals/wire 32'000 ; 2'000'000
+            error? trap [
+                outcome: write port take/part port/locals/wire 32'000 ; 2'000'000
             ][
                 ;; only mask some errors:
                 all [
