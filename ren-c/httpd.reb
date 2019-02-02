@@ -4,12 +4,13 @@ Rebol [
     Date: 14-Dec-2018
     File: %httpd.reb
     Home: https://github.com/rgchris/Scripts
-    Version: 0.3.4
+    Version: 0.3.5
     Purpose: "An elementary Web Server scheme for creating fast prototypes"
     Rights: http://opensource.org/licenses/Apache-2.0
     Type: module
     Name: rgchris.httpd
     History: [
+        02-Feb-2019 0.3.5 "File argument for REDIRECT permits relative redirections"
         14-Dec-2018 0.3.4 "Add REFLECT handler (supports OPEN?); Redirect defaults to 303"
         16-Mar-2018 0.3.3 "Add COMPRESS? option"
         14-Mar-2018 0.3.2 "Closes connections (TODO: support Keep-Alive)"
@@ -280,7 +281,7 @@ sys/make-scheme [
             type: "text/plain"
         ]
 
-        redirect: method [target [url!] /as code [integer!]] [
+        redirect: method [target [url! file!] /as code [integer!]] [
             status: code: default [303]
             content: "Redirecting..."
             type: "text/plain"
@@ -457,7 +458,7 @@ sys/make-scheme [
 
         if object? client/locals/request [
             client/locals/parent/locals/handler client/locals/request response
-        ]else [ ;; don't crash on bad request
+        ] else [ ;; don't crash on bad request
             response/status: 500
             response/type: "text/html"
             response/content: "Bad request."
@@ -467,7 +468,9 @@ sys/make-scheme [
             response/content: gzip response/content
         ]
 
-        if error? trap [outcome: write client hdr: build-header response] [
+        if error? trap [
+            outcome: write client hdr: build-header response
+        ] [
             all [
                 outcome/code = 5020
                 outcome/id = 'write-error
