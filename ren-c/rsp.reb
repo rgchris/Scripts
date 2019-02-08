@@ -1,5 +1,3 @@
-#!/usr/local/bin/ren-c-latest /Users/Chris/Projects/Scripts/test/rsp.test.reb
-
 Rebol [
     Title: "RSP Preprocessor"
     Author: "Christopher Ross-Gill"
