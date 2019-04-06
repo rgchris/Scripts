@@ -25,10 +25,10 @@ curl: use [user-agent form-headers enquote][
 
     enquote: func [
         data [block! any-string!]
-        /local mark
+        <local> mark
     ][
         mark: switch system/version/4 [3 [{"}] ("'")]
-        unspaced compose [mark (data) mark]
+        unspaced compose [mark ((data)) mark]
     ]
 
     form-headers: func [headers [block! object!] /local out][
@@ -47,32 +47,29 @@ curl: use [user-agent form-headers enquote][
     curl: func [
         "Wrapper for the cURL shell function"
         url [url!] "URL to Retrieve"
-        /method "Specify HTTP request method"
-        verb [word! text! blank!] "HTTP request method"
-        /send "Include request body"
-        data [text! binary! file! blank!] "Request body"
-        /header "Specify HTTP headers"
-        headers [block! object! blank!] "HTTP headers"
-        /as "Specify user agent"
-        agent [text!] "User agent"
-        /user "Provide User Credentials"
-        name [text! blank!] "User Name"
-        pass [text! blank!] "User Password"
+        /method [word! text!] "Specify HTTP request method"
+        /send [text! binary! file!] "Include request body"
+        /header [block! object!] "Specify HTTP headers"
+        /as [text!] "Specify user agent"
+        /user [text!] "User Name"
+        /pass [text!] "User Password"
         /full "Include HTTP headers in response"
         /binary "Receive response as binary"
         /follow "Follow HTTP redirects"
         /quiet "Return blank! on 4xx/5xx HTTP responses"
         /secure "Disallow 'insecure' SSL transactions"
-        /into "Specify result string"
-        out [text! binary! blank!] "String to contain result"
-        /error "Specify error string"
-        err [text! blank!] "String to contain error"
-        /timeout "Specify a time limit"
-        time [time! integer! blank!] "Time limit"
-        /local command options code
+        /into [text! binary!] "Specify string or binary to contain result"
+        /error [text!] "Specify string to contain error"
+        /timeout [time! integer!] "Specify a time limit"
+        <local> command options code agent data out err
     ][
-        out: any [:out make binary! 0]
-        err: any [:err make text! 0]
+        agent: as
+        as: :lib/as
+
+        data: send
+
+        out: any [into make binary! 0]
+        err: any [error make text! 0]
 
         options: unspaced collect [
             keep "-s"
@@ -83,17 +80,15 @@ curl: use [user-agent form-headers enquote][
                 not secure [keep "k"]
                 follow [keep "L"]
 
-                :verb [
+                method [
                     keep " -X "
-                    keep verb: uppercase form verb
+                    keep method: uppercase form method
                 ]
 
-                :time [
+                timeout [
                     keep " -m "
-                    keep to integer! time
+                    keep to integer! timeout
                 ]
-
-                not send [data: _]
 
                 file? data [
                     keep reduce [" -d @" form data]
@@ -109,22 +104,22 @@ curl: use [user-agent form-headers enquote][
                     ]
                 ]
 
-                all [:name :pass][
+                all [user pass][
                     keep " -u "
-                    keep enquote [name ":" pass]
+                    keep enquote [user ":" pass]
                 ]
 
-                :headers [keep form-headers headers]
+                header [keep form-headers header]
             ]
 
             keep reduce [
-                " -A " enquote any [:agent user-agent]
+                " -A " enquote any [agent user-agent]
             ]
         ]
 
         command: spaced ["curl" options enquote url]
 
-        code: call/shell/wait/input/output/error command data out err
+        code: call/shell/input/output/error command data out err
 
         switch code [
             0 18 [
