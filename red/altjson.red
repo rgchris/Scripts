@@ -1,16 +1,20 @@
+#!/usr/local/bin/red ../test/altjson.test.red
+
 Red [
 	Title: "JSON Decoder/Encoder for Red"
 	Author: "Christopher Ross-Gill"
-	Date: 24-Feb-2018
+	Date: 27-Nov-2018
 	Home: http://www.ross-gill.com/page/JSON_and_Rebol
 	File: %altjson.red
-	Version: 0.4.1
+	Version: 0.4.3
 	Purpose: "Convert a Red block to a JSON string"
 	Rights: http://opensource.org/licenses/Apache-2.0
 	Type: 'module
 	Name: 'rgchris.altjson
 	Exports: [load-json to-json]
 	History: [
+		08-Jul-2019 0.4.3 "Functions as a replacement codec"
+		27-Nov-2018 0.4.2 "Handles unset GET-WORD! values"
 		24-Feb-2018 0.4.1 "Red Compiler Friendly"
 		24-Feb-2018 0.4.0 "New TO-JSON engine, /PRETTY option"
 		12-Sep-2017 0.3.6.1 "Red Compatibilities"
@@ -362,13 +366,13 @@ json-emitter: make object! [
 			set/any 'value take reduce reduce [value]
 		]
 
-		switch value [
+		switch :value [
 			none blank null _ [value: none]
 			true yes [value: true]
 			false no [value: false]
 		]
 
-		switch/default type?/word value [
+		switch/default type?/word :value [
 			block! [
 				either find/only/same stack value [
 					emit circular
@@ -452,4 +456,19 @@ to-json: func [
 	/pretty "Format Output"
 ][
 	json-emitter/to-json :value pretty
+]
+
+put system/codecs 'json context [
+	Title:     "JSON codec"
+	Name:      'JSON
+	Mime-Type: [application/json]
+	Suffixes:  [%.json]
+	encode: func [data [any-type!] where [file! url! none!]] [
+		to-json data
+	]
+	decode: func [text [string! binary! file!]] [
+		if file? text [text: read text]
+		if binary? text [text: to string! text]
+		load-json text
+	]
 ]
