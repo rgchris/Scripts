@@ -1,16 +1,17 @@
 Red [
     Title: "RSP Preprocessor"
     Author: "Christopher Ross-Gill"
-    Date: 25-Jan-2019
+    Date: 25-Jan-2020
     Home: http://ross-gill.com/page/RSP
     File: %rsp.red
-    Version: 0.4.3
+    Version: 0.5.0
     Purpose: {Red-embedded Markup}
     Rights: http://opensource.org/licenses/Apache-2.0
     Type: module
     Name: rgchris.rsp
     Exports: [sanitize load-rsp render render-each]
     History: [
+        25-Jan-2020 0.5.0 "Renovated BUILD-TAG function, fix PATH! namespaced tag/attribute name handling"
         25-Jan-2019 0.4.3 "Red Late 2018 Changes"
     ]
     Notes: "Extracted from QuarterMaster"
@@ -39,55 +40,88 @@ sanitize: func [text [any-string!] /local mark] bind [
 build-tag: func [
     "Generates a tag from a composed block."
     values [block!] "Block of parens to evaluate and other data."
-    /local tag value-rule xml? name attribute value
+    /local to-name tag is-name has-value name value xml?
 ][
-    tag: make string! 7 * length? values
-    xml?: false
-    value-rule: [
-        set value any-type! (
-            switch type?/word :value [
-                get-word! get-path! group! [value: reduce value]
-            ]
-
-            value: switch type?/word :value [
-                logic! none! [either :value [name][none]]
-                string! url! email! [value]
-                binary! [enbase value]
-                tag! [to string! value]
-                file! [replace/all to string! value #" " "%20"]
-                char! [form value]
-                date! [form value]
-                tuple! [mold as-color value]
-                issue! integer! float! money! time! percent! [mold value]
-                word! get-word! set-word! lit-word! refinement! [form to word! value]
-            ]
-        )
+    to-name: func [name [word! path! set-word! set-path!]][
+        name: mold name
+        replace name ":" ""
+        replace/all name "/" ":"
     ]
 
-    parse compose values [
-        [
-            set name ['?xml (xml?: true) | word! | ahead path! into [2 word!]] (
-                append tag replace mold name "/" ":"
+    xml?: false
+
+    tag: collect [
+        is-name: [
+            word! | ahead path! into [2 word!]
+        ]
+
+        has-value: [
+            [
+                set value [get-word! | get-path! | paren!] (
+                    value: do reduce reduce [value]
+                )
+                |
+                set value [
+                    any-string! | logic! | char! | lit-word! | word! | issue!
+                    |
+                    number! | date! | time! | tuple! ; | money!
+                ]
+                |
+                set value ['true | 'false | 'none] (value: get value)
+            ]
+            (
+                value: switch type?/word :value [
+                    string! url! email! [value]
+                    logic! none! [either :value [name][none]]
+                    binary! [enbase value]
+                    tag! [to string! value]
+                    file! [replace/all form value #" " "%20"]
+                    char! [form value]
+                    date! [
+                        ; form-date value "%c"
+                        form value
+                    ]
+                    tuple! [mold as-color value/1 value/2 value/3]
+                    issue! integer! float! percent! money! time! [mold value]
+                    word! lit-word! [to string! value]
+                ]
+            )
+        ]
+
+        parse values [
+            set name ['?xml (xml?: true) | is-name] (
+                keep to-name name
             )
             any [
-                set attribute [set-word! | word! | and path! into [2 word!]] value-rule (
-                    if value [
-                        attribute: switch type?/word attribute [
-                            word! [mold attribute]
-                            set-word! [mold to word! attribute]
-                            path! [replace mold attribute "/" ":"]
-                        ]
-                        repend tag [#" " attribute {="} sanitize form value {"}]
-                    ]
+                '/ end (
+                    keep either xml? ["?"]["/"]
+                    xml?: false
                 )
-                | value-rule (repend tag [#" " sanitize value])
+                |
+                set name [is-name | set-word!] [
+                    has-value (
+                        if value [
+                            keep rejoin [
+                                " " to-name name {="} sanitize form value {"}
+                            ]
+                        ]
+                    )
+                    |
+                    (
+                        keep " "
+                        keep to-name name
+                    )
+                ]
             ]
-            end (if xml? [append tag #"?"])
+            end (
+                if xml? [keep "?"]
+            )
+            |
+            [set name refinement! to end (tag: mold name)]
         ]
-        |
-        [set name refinement! to end (tag: mold name)]
     ]
-    to tag! tag
+
+    if tag: rejoin tag [to tag! tag]
 ]
 
 load-rsp: func [body [string!] /local code mark return: [function!]] bind [
