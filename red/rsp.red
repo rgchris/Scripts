@@ -36,7 +36,6 @@ sanitize: func [text [any-string!] /local mark] bind [
         extended: complement charset [#"^(00)" - #"^(7F)"]
     ]
 
-; from Rebol 2
 build-tag: func [
     "Generates a tag from a composed block."
     values [block!] "Block of parens to evaluate and other data."
@@ -61,13 +60,13 @@ build-tag: func [
                     value: do reduce reduce [value]
                 )
                 |
+                ahead word! set value ['true | 'false | 'none] (value: get value)
+                |
                 set value [
                     any-string! | logic! | char! | lit-word! | word! | issue!
                     |
                     number! | date! | time! | tuple! ; | money!
                 ]
-                |
-                set value ['true | 'false | 'none] (value: get value)
             ]
             (
                 value: switch type?/word :value [
