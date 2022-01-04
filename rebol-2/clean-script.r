@@ -1,13 +1,33 @@
 Rebol [
     Title: "Rebol Script Cleaner (Pretty Printer)"
     Date: 5-Jan-2020
-    File: %clean-script.r
     Author: "Christopher Ross-Gill"
+    Home: http://www.ross-gill.com/
+    File: %clean-script.r
+    Version: 1.2.1
     Purpose: {
         Cleans (pretty prints) Rebol scripts by parsing the Rebol code
         and supplying standard indentation and spacing.
     }
+
+    Rights: http://opensource.org/licenses/Apache-2.0
+
+    Type: 'module
+    Name: 'rgchris.clean-script
+    Exports: [
+        clean-script
+    ]
+
+    Notes: {
+        Originally created by Carl Sassenrath, this version has far-reaching
+        changes including spacing between values (excepting specific criteria
+        between blocks), multi-line and nesting blocks and some others.
+        Formatting of values themselves remain untouched to preserve author's
+        intent.
+    }
+
     History: [
+        "Christopher Ross-Gill" 1.2.1 05-Jan-2020 "Indent binary values"
         "Christopher Ross-Gill" 1.2.0 05-Jan-2020 "Rewrite"
         "Carl Sassenrath"       1.1.0 29-May-2003 {Fixes indent and parse rule.}
         "Carl Sassenrath"       1.0.0 27-May-2000 "Original program."
@@ -98,18 +118,29 @@ clean-script: use [
     ]
 
     space: charset "^- "
-    chars: complement charset "^/^- []()"
+    chars: complement charset "^/^- [](){}"
 
     func [
         "Returns source with standard spacing (pretty printed)."
         source [string!] "Original source"
+
         /local tokens context part mark here token widow orphan lookup indent
     ][
         tokens: list/new
 
         parse/all source [
             any [
-                copy part ["#!" some [some chars | space | "[" | "]" | "(" | ")"] newline] (
+                copy part [
+                    "#!" some [
+                        some chars
+                        |
+                        space
+                        |
+                        "[" | "]" | "(" | ")"
+                    ]
+                    newline
+                ]
+                (
                     token: list/append tokens
                     token/type: <comment>
                     token/value: part
@@ -134,21 +165,43 @@ clean-script: use [
                 |
                 some space
                 |
-                copy part [#"[" | #"(" | "#[" | "#("] (
+                copy part [
+                    #"[" | #"(" | "#[" | "#("
+                    |
+                    "#{" | "2#{" | "16#{" | "64#{"
+                ]
+                (
                     token: list/append tokens
 
                     token/type: switch part [
-                        "[" [<block>]
-                        "(" [<group>]
-                        "#[" [<construct>]
-                        "#(" [<map>]
+                        "[" [
+                            <block>
+                        ]
+
+                        "(" [
+                            <group>
+                        ]
+
+                        "#[" [
+                            <construct>
+                        ]
+
+                        "#(" [
+                            <map>
+                        ]
+
+                        "#{" "2#{" "16#{" "64#{" [
+                            <binary>
+                        ]
                     ]
 
                     token/value: part
                     token/is-open: yes
                 )
                 |
-                copy part [#"]" | #")"]
+                copy part [
+                    #"]" | #")" | #"}"
+                ]
                 (
                     token: list/append tokens
                     token/value: part
@@ -160,7 +213,9 @@ clean-script: use [
                             not here: here/back [
                                 ; this token is a orphan
                                 token/type: <comment>
-                                token/value: rejoin ["; " token/value " ; DETECTED ORPHAN (No Match)"]
+                                token/value: rejoin [
+                                    "; " token/value " ; DETECTED ORPHAN (No Match)"
+                                ]
 
                                 token: list/append tokens
                                 token/type: <newline>
@@ -181,12 +236,15 @@ clean-script: use [
 
                             all [
                                 token/value = "]"
-                                find [<group> <map>] here/type
+                                find [<group> <map> <binary>] here/type
                             ][
                                 ; the current tag is an widow
                                 here/type: <comment>
-                                here/value: rejoin ["; " here/value " ; DETECTED WIDOW (Bad Opener)"]
                                 here/is-open: no
+                                here/value: rejoin [
+                                    "; " here/value " ; DETECTED WIDOW (Bad Opener)"
+                                ]
+
 
                                 here: list/insert-after here
                                 here/type: <newline>
@@ -200,11 +258,13 @@ clean-script: use [
 
                             all [
                                 token/value = ")"
-                                find [<block> <construct>] here/type
+                                find [<block> <construct> <binary>] here/type
                             ][
                                 ; this token is a orphan
                                 token/type: <comment>
-                                token/value: rejoin ["; " token/value " ; DETECTED ORPHAN (No Group/Map Opener)"]
+                                token/value: rejoin [
+                                    "; " token/value " ; DETECTED ORPHAN (No Group/Map Opener)"
+                                ]
 
                                 token: list/append tokens
                                 token/type: <newline>
@@ -213,7 +273,24 @@ clean-script: use [
                                 true  ; we're done
                             ]
 
-                            'else [
+                            all [
+                                token/value = "}"
+                                find [<block> <construct> <group> <map>] here/type
+                            ][
+                                ; this token is a orphan
+                                token/type: <comment>
+                                token/value: rejoin [
+                                    "; " token/value " ; DETECTED ORPHAN (No Binary Opener)"
+                                ]
+
+                                token: list/append tokens
+                                token/type: <newline>
+                                token/value: newline
+
+                                true  ; we're done
+                            ]
+
+                            <else> [
                                 here/is-open: no
 
                                 token/type: switch here/type [
@@ -221,6 +298,7 @@ clean-script: use [
                                     <group> [</group>]
                                     <construct> [</construct>]
                                     <map> [</map>]
+                                    <binary> [</binary>]
                                 ]
 
                                 if token/is-split [
@@ -243,7 +321,13 @@ clean-script: use [
                     ]
                 )
                 |
-                #";" any space copy part any [some chars | space | "[" | "]" | "(" | ")"]
+                #";" any space copy part any [
+                    some chars
+                    |
+                    space
+                    |
+                    "[" | "]" | "(" | ")"
+                ]
                 (
                     token: list/append tokens
                     token/type: <comment>
@@ -254,10 +338,13 @@ clean-script: use [
                     ]
                 )
                 |
-                skip (
+                skip
+                (
                     token: list/append tokens
-                    token/value: case [
+
+                    case [
                         ; might need more of these exceptions
+                        ;
                         parse/all mark [
                             [
                                 "<-" here: space
@@ -267,20 +354,21 @@ clean-script: use [
                             to end
                         ][
                             token/type: <text>
-                            copy/part mark here
+                            token/value: copy/part mark here
                         ]
 
                         not error? try [
                             set [part here] load/next mark
                         ][
                             token/type: <text>
-                            copy/part mark here
+                            token/value: copy/part mark here
                         ]
 
                         parse/all mark [some chars here: to end] [
-                            ; kwatz!
+                            ; binary blobs or kwatz!
+                            ;
                             token/type: <text>
-                            copy/part mark here
+                            token/value: copy/part mark here
                         ]
 
                         here: next mark [  ; ?!?
@@ -311,13 +399,15 @@ clean-script: use [
             indent: 1
 
             while [token] [
-                if find [</block> </group> </construct> </map>] token/type [
+                if find [</block> </group> </construct> </map> </binary>] token/type [
                     indent: indent - 1
                 ]
 
                 if token/is-open [
                     token/type: <comment>
-                    token/value: rejoin ["; " token/value " ; DETECTED WIDOW (Unmatched Opener)"]
+                    token/value: rejoin [
+                        "; " token/value " ; DETECTED WIDOW (Unmatched Opener)"
+                    ]
 
                     token: list/insert-after token
                     token/type: <newline>
@@ -345,23 +435,22 @@ clean-script: use [
                         keep " "
                     ]
 
-                    find [<block> <group> <construct> <map>] token/back/type []
+                    find [<block> <group> <construct> <map> <binary>] token/back/type []
 
-                    find [</block> </group> </construct> </map>] token/type []
+                    find [</block> </group> </construct> </map> </binary>] token/type []
 
                     all [
                         token/type = <block>
                         find [</block> </construct>] token/back/type
                         token/back/back/type = <newline>
-
                     ][]
 
-                    'else [
+                    <else> [
                         keep " "
                     ]
                 ]
 
-                if find [<block> <group> <construct> <map>] token/type [
+                if find [<block> <group> <construct> <map> <binary>] token/type [
                     indent: indent + 1
                 ]
 
