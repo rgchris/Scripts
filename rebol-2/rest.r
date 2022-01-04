@@ -1,18 +1,22 @@
 Rebol [
     Title: "REST-Friendly HTTP Protocol"
+    Date: 28-Sep-2021
     Author: "Christopher Ross-Gill"
-    Date: 27-Jan-2018
     Home: http://www.ross-gill.com/page/REST_Protocol
     File: %rest.r
-    Version: 0.2.0
+    Version: 0.2.1
     Purpose: {
         An elementary HTTP protocol allowing more versatility when developing Web
         Services clients.
     }
+
     Rights: http://opensource.org/licenses/Apache-2.0
-    Type: module
-    Name: rgchris.rest
+
+    Type: 'module
+    Name: 'rgchris.rest
+
     History: [
+        28-Sep-2021 0.2.1 "Refactored for readability"
         27-Jan-2018 0.2.0 "Tolerance of HTTP/2 Requests; Added Multipart (inc. OAuth)"
         12-Jan-2017 0.1.4 "Tidy up of OAuth portion"
         30-Oct-2012 0.1.3 "Use CURL in place of native TCP; Added OAuth"
@@ -24,10 +28,13 @@ Rebol [
 
 do %altwebform.r
 do %curl.r
+
 _: none
 
 unless in system/schemes 'rest [
-    system/schemes: make system/schemes [REST: _]
+    system/schemes: make system/schemes [
+        REST: _
+    ]
 ]
 
 system/schemes/rest: make system/standard/port [
@@ -46,8 +53,23 @@ system/schemes/rest: make system/standard/port [
 ]
 
 system/schemes/rest/handler: use [
-    prepare transcribe execute
+    support prepare transcribe execute
 ][
+    support: make object! [
+        to-numeric-timestamp: func [date [date!]] [
+            timestamp: form any [
+               ; Rebol 2 will never support integer date differences after 19-Jan-2038
+               ;
+               attempt [to integer! difference date 1-Jan-1970/0:0:0]
+               date - 1-Jan-1970/0:0:0 * 86400.0
+           ]
+
+            clear find/last timestamp "."
+
+            timestamp
+        ]
+    ]
+
     prepare: use [
         request-prototype header-prototype
         oauth-credentials oauth-prototype
@@ -73,7 +95,10 @@ system/schemes/rest/handler: use [
             Expect: _
             Accept: "*/*"
             Connection: "close"
-            User-Agent: rejoin ["Rebol/" system/product " " system/version]
+            User-Agent: rejoin [
+                "Rebol/" system/product " " system/version
+            ]
+
             Content-Length: _
             Content-Type: _
             Authorization: _
@@ -101,8 +126,13 @@ system/schemes/rest/handler: use [
             oauth_signature: _
         ]
 
-        compose-multipart-request: use [break-lines make-boundary prototype] [
-            break-lines: func [data [string!] /at size [integer!]] [
+        compose-multipart-request: use [
+            break-lines make-boundary prototype
+        ][
+            break-lines: func [
+                data [string!]
+                /at size [integer!]
+            ][
                 size: any [size 72]
 
                 rejoin remove collect [
@@ -116,8 +146,10 @@ system/schemes/rest/handler: use [
 
             make-boundary: does [
                 rejoin [
-                    "--__Rebol__" form system/product "__" replace/all form system/version "." "_" "__"
-                    enbase/base checksum/secure form now/precise 16 "__"
+                    "--__Rebol__" form system/product
+                    "__" replace/all form system/version "." "_"
+                    "__" enbase/base checksum/secure form now/precise 16
+                    "__"
                 ]
             ]
 
@@ -143,17 +175,28 @@ system/schemes/rest/handler: use [
 
                     parse request/content [
                         some [
-                            set key set-word! [
-                                set value [none! | string! | file! | binary!]
+                            set key set-word!
+                            [
+                                set value [
+                                    none! | string! | file! | binary!
+                                ]
                                 |
-                                here: [word! | get-word! | path! | paren!] (
-                                    throw-on-error [set/any [value here] do/next here]
-                                ) :here
-                            ] (
+                                here:
+                                [word! | get-word! | path! | paren!]
+                                (
+                                    throw-on-error [
+                                        set/any [value here] do/next here
+                                    ]
+                                )
+                                :here
+                            ]
+                            (
                                 if switch type?/word value [
                                     string! [
-                                            Content-Disposition: rejoin [{form-data; name="} form key {"}]
                                         key: make prototype [
+                                            Content-Disposition: rejoin [
+                                                {form-data; name="} form key {"}
+                                            ]
                                         ]
                                     ]
 
@@ -197,6 +240,10 @@ system/schemes/rest/handler: use [
 
                                         ; value: break-lines enbase value
                                     ]
+
+                                    ; file! [
+                                    ;
+                                    ; ]
                                 ][
                                     keep "^M^/"
                                     keep boundary
@@ -217,42 +264,57 @@ system/schemes/rest/handler: use [
             ]
         ]
 
-        sign: func [request [object!] /local header params timestamp out] [
+        sign: func [
+            request [object!]
+            /local header params timestamp out
+        ][
             out: copy ""
+
             timestamp: now/precise
 
             header: make oauth-prototype [
                 oauth_consumer_key: request/oauth/consumer-key
                 oauth_token: request/oauth/oauth-token
                 oauth_callback: request/oauth/oauth-callback
-                oauth_nonce: enbase/base checksum/secure join timestamp oauth_consumer_key 64
-                oauth_timestamp: form any [
-                    attempt [to integer! difference timestamp 1-Jan-1970/0:0:0]
-                    timestamp - 1-Jan-1970/0:0:0 * 86400.0
+                oauth_nonce: enbase checksum/secure rejoin [
+                    timestamp oauth_consumer_key
                 ]
-                clear find/last oauth_timestamp "."
+
+                oauth_timestamp: support/to-numeric-timestamp timestamp
             ]
 
-            params: sort/skip collect [
+            params: collect [
                 keep body-of header
+
                 if all [
                     request/content
                     not request/multipart
                 ][
                     keep request/content
                 ]
-            ] 2
+            ]
 
-            header/oauth_signature: enbase/base checksum/secure/key rejoin [
+            sort/skip params 2
+
+            header/oauth_signature: rejoin [
                 uppercase form request/action "&" url-encode form request/url "&"
                 url-encode replace/all to-webform params "+" "%20"
-            ] rejoin [
-                request/oauth/consumer-secret "&" any [request/oauth/oauth-token-secret ""]
-            ] 64
+            ]
+
+            header/oauth_signature: enbase checksum/secure/key header/oauth_signature rejoin [
+                request/oauth/consumer-secret
+                "&"
+                any [
+                    request/oauth/oauth-token-secret
+                    ""
+                ]
+            ]
 
             foreach [name value] body-of header [
                 if value [
-                    repend out [", " form name {="} url-encode form value {"}]
+                    repend out [
+                        ", " form name {="} url-encode form value {"}
+                    ]
                 ]
             ]
 
@@ -260,18 +322,36 @@ system/schemes/rest/handler: use [
                 request/action = "GET"
                 request/content
             ][
-                request/url: join request/url to-webform/prefix request/content
+                request/url: rejoin [
+                    request/url
+                    to-webform/prefix request/content
+                ]
+
                 request/content: _
             ]
 
-            request/headers/Authorization: join "OAuth" next out
+            request/headers/Authorization: rejoin [
+                "OAuth" next out
+            ]
         ]
 
-        prepare: func [port [port!] /local request] [
+        prepare: func [
+            port [port!]
+            /local request
+        ][
             port/locals/request: request: make request-prototype port/locals/request
+
             request/action: uppercase form request/action
-            request/headers: make header-prototype any [request/headers []]
-            request/content: any [port/state/custom request/content]
+
+            request/headers: make header-prototype any [
+                request/headers
+                []
+            ]
+
+            request/content: any [
+                port/state/custom  ; WebForm simulation mode
+                request/content
+            ]
 
             case [
                 request/oauth [
@@ -280,20 +360,28 @@ system/schemes/rest/handler: use [
                 ]
 
                 request/bearer [
-                    request/headers/Authorization: join "Bearer " request/bearer
+                    request/headers/Authorization: rejoin [
+                        "Bearer " request/bearer
+                    ]
                 ]
 
                 all [
                     not request/headers/Authorization
                     port/user port/pass
                 ][
-                    request/headers/Authorization: join "Basic " enbase join port/user [#":" port/pass]
+                    request/headers/Authorization: rejoin [
+                        "Basic " enbase rejoin [
+                            port/user #":" port/pass
+                        ]
+                    ]
                 ]
             ]
 
             if port/state/index > 0 [
                 request/version: 1.1
-                request/headers/Range: rejoin ["bytes=" port/state/index "-"]
+                request/headers/Range: rejoin [
+                    "bytes=" port/state/index "-"
+                ]
             ]
 
             case/all [
@@ -311,12 +399,15 @@ system/schemes/rest/handler: use [
                     binary? request/content
                 ][
                     request/length: length? request/content
+
                     if request/length > 1024 [
                         request/headers/Expect: ""
                         ; request/headers/Transfer-Encoding: "chunked"
                         ; request/headers/Connection: "keep-alive"
                     ]
+
                     request/headers/Content-Length: form request/length
+
                     request/headers/Content-Type: any [
                         request/headers/Content-Type form request/type
                     ]
@@ -327,7 +418,9 @@ system/schemes/rest/handler: use [
         ]
     ]
 
-    execute: func [port [port!]] [
+    execute: func [
+        port [port!]
+    ][
         curl/full/method/header/with/timeout/into  ; url action headers content timeout response
         port/locals/request/url
         port/locals/request/action
@@ -346,21 +439,39 @@ system/schemes/rest/handler: use [
             [3 digit]
         ]
 
-        header-feed: [newline | crlf]
+        header-feed: [
+            newline | crlf
+        ]
 
         header-part: use [chars] [
-            chars: complement charset [#"^(00)" - #"^(1F)"]
-            [some chars any [header-feed some " " some chars]]
+            chars: complement charset [
+                #"^(00)" - #"^(1F)"
+            ]
+
+            [
+                some chars
+                any [
+                    header-feed
+                    some " "
+                    some chars
+                ]
+            ]
         ]
 
         header-name: use [chars] [
-            chars: charset ["_-0123456789" #"a" - #"z" #"A" - #"Z"]
+            chars: charset [
+                "_-0123456789"
+                #"a" - #"z"
+                #"A" - #"Z"
+            ]
+
             [some chars]
         ]
 
-        space: use [space] [
-            space: charset " ^-"
-            [some space]
+        space: use [chars] [
+            chars: charset " ^-"
+
+            [some chars]
         ]
 
         response-prototype: context [
@@ -391,40 +502,74 @@ system/schemes/rest/handler: use [
 
         transcribe: func [port [port!] /local response name value pos] [
             port/locals/response: response: make response-prototype [
-                unless parse/all port/locals/response [
-                    "HTTP/" [
-                        "1." ["0" | "1"] space copy status response-code
-                        space copy message header-part
-                        |
-                        "2" space copy status response-code (message: "")
-                        opt [space opt [copy message header-part]]
-                    ] header-feed
-                    (net-utils/net-log reform ["HTTP Response:" status message])
-                    (
-                        status: load status
-                        headers: make block! []
-                    )
-                    some [
-                        copy name header-name ":" any " "
-                        copy value header-part header-feed
-                        (repend headers [to set-word! name value])
+                any [
+                    parse/all port/locals/response [
+                        "HTTP/" [
+                            "1." ["0" | "1"]
+                            space
+                            copy status response-code
+                            space
+                            copy message header-part
+                            |
+                            "2"
+                            space
+                            copy status response-code
+                            (message: "")
+                            opt [
+                                space opt [
+                                    copy message header-part
+                                ]
+                            ]
+                        ]
+                        header-feed
+                        (
+                            net-utils/net-log reform [
+                                "HTTP Response:" status message
+                            ]
+                        )
+                        (
+                            status: load status
+                            headers: make block! []
+                        )
+                        some [
+                            copy name header-name
+                            ":" any " "
+                            copy value header-part
+                            header-feed
+                            (
+                                repend headers [
+                                    to set-word! name
+                                    value
+                                ]
+                            )
+                        ]
+                        header-feed
+                        content: to end (
+                            content: as-string binary: as-binary copy content
+                        )
                     ]
-                    header-feed content: to end (
-                        content: as-string binary: as-binary copy content
+                    (
+                        net-utils/net-log pos
+                        make error! "Could Not Parse HTTP Response"
                     )
-                ][
-                    net-utils/net-log pos
-                    make error! "Could Not Parse HTTP Response"
                 ]
 
-                headers: make header-prototype http-headers: new-line/skip headers true 2
+                http-headers: new-line/skip headers true 2
+                headers: make header-prototype http-headers
 
                 type: all [
-                    path? type: attempt [load headers/Content-Type]
+                    path? type: attempt [
+                        load headers/Content-Type
+                    ]
                     type
                 ]
 
-                length: any [attempt [headers/Content-Length: to integer! headers/Content-Length] 0]
+                length: any [
+                    attempt [
+                        headers/Content-Length: to integer! headers/Content-Length
+                    ]
+                    0
+                ]
             ]
         ]
     ]
@@ -440,11 +585,16 @@ system/schemes/rest/handler: use [
             port/locals: context [
                 request: case/all [
                     url? spec [
-                        spec: compose [url: (to url! replace form spec rest:// http://)]
+                        spec: compose [
+                            url: (
+                                to url! replace form spec rest:// http://
+                            )
+                        ]
                     ]
 
                     block? spec [
                         ; we don't alter SPEC here, just resolve and validate the URL value
+                        ;
                         case/all [
                             not url: find spec quote url: [
                                 make error! "REST spec needs a URL"
@@ -479,7 +629,9 @@ system/schemes/rest/handler: use [
             ]
         ]
 
-        open: func [port [port!]] [
+        open: func [
+            port [port!]
+        ][
             port/state/flags: port/state/flags or port-flags
             execute prepare port
         ]
