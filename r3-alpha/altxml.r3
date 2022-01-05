@@ -1,15 +1,19 @@
 Rebol [
     Title: "XML Parser/Object Model for Rebol 3"
-    Author: "Christopher Ross-Gill"
     Date: 22-Oct-2009
+    Author: "Christopher Ross-Gill"
     Home: http://www.ross-gill.com/page/XML_and_REBOL
     File: %altxml.r3
     Version: 0.4.1
     Purpose: "XML handler for Rebol v3"
     Rights: http://opensource.org/licenses/Apache-2.0
+
     Type: module
     Name: rgchris.altxml
-    Exports: [load-xml decode-xml]
+    Exports: [
+        load-xml decode-xml
+    ]
+
     History: [
         07-Apr-2014 0.4.1 "Fixed loop when handling unterminated empty tags"
         14-Apr-2013 0.4.0 "Added /PATH method"
@@ -243,7 +247,10 @@ load-xml: use [
             hit
         ]
 
-        get-by-tag: func [tag [tag! issue!] /local rule hits hit] [
+        get-by-tag: func [
+            tag [tag! issue!]
+            /local rule hits hit
+        ][
             hits: copy []
 
             parse tree rule: [
@@ -357,10 +364,21 @@ load-xml: use [
 
         sibling: func [/before /after] [
             case [
-                all [after parse after: skip position 2 [[file! | is-tag] to end]] [
+                all [
+                    after
+                    parse after: skip position 2 [
+                        [file! | is-tag] to end
+                    ]
+                ][
                     make-node after
                 ]
-                all [before parse before: skip position -2 [[file | is-tag] to end]] [
+
+                all [
+                    before
+                    parse before: skip position -2 [
+                        [file | is-tag] to end
+                    ]
+                ][
                     make-node before
                 ]
             ]
@@ -371,10 +389,31 @@ load-xml: use [
         children: has [hits hit] [
             hits: copy []
             parse case [
-                block? value [value] string? value [reduce [%.txt value]] none? value [[]]
+                block? value [
+                    value
+                ]
+
+                string? value [
+                    reduce [
+                        %.txt value
+                    ]
+                ]
+
+                none? value [
+                    []
+                ]
             ][
-                any [is-attr skip]
-                any [hit: [is-tag | file!] skip (append hits make-node hit)]
+                any [
+                    is-attr
+                    skip
+                ]
+
+                any [
+                    hit:
+                    [is-tag | file!]
+                    skip
+                    (append hits make-node hit)
+                ]
             ]
             hits
         ]
@@ -394,7 +433,21 @@ load-xml: use [
             result: :this
 
             unless parse path [
-                opt [tag! (either result/name = path/1 [result: compose [(any [:result []])]] [result: none])]
+                opt [
+                    tag! (
+                        either result/name = path/1 [
+                            result: compose [
+                                (
+                                    any [
+                                        :result []
+                                    ]
+                                )
+                            ]
+                        ][
+                            result: none
+                        ]
+                    )
+                ]
 
                 any [
                     selector:
