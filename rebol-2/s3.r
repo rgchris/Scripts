@@ -1,247 +1,468 @@
-REBOL [
-	Title: "Amazon S3 Protocol"
-	Author: "Christopher Ross-Gill"
-	Date: 20-Mar-2013
-	File: %s3.r
-	Version: 0.1.0
-	Purpose: {Basic retrieve and upload protocol for Amazon S3.}
-	Example: [
-		do/args http://reb4.me/r/s3 [args (see settings)]
-		write s3://<bucket>/file/foo.txt "Foo"
-		read s3://<bucket>/file/foo.txt
-	]
-	History: [
-		23-Nov-2008 ["Graham Chiu" "Maarten Koopmans" "Gregg Irwin"]
-	]
-	Settings: [
-		AWSAccessKeyId: <AWSAccessKeyId>
-		AWSSecretAccessKey: <AWSSecretAccessKey>
-		Secure: false ; optional
-	]
+Rebol [
+    Title: "Amazon S3 Protocol"
+    Author: "Christopher Ross-Gill"
+    Date: 30-Aug-2011
+    File: %s3.r
+    Version: 0.2.1
+    Purpose: {Basic retrieve and upload protocol for Amazon S3.}
+    Rights: http://opensource.org/licenses/Apache-2.0
+    Example: [
+        do/args http://reb4.me/r/s3 [args (see settings)]
+        write s3://<bucket>/file/foo.txt "Foo"
+        read s3://<bucket>/file/foo.txt
+    ]
+    History: [
+        23-Nov-2008 ["Graham Chiu" "Maarten Koopmans" "Gregg Irwin"]
+    ]
+    Settings: [
+        AWSAccessKeyId: <AWSAccessKeyId>
+        AWSSecretAccessKey: <AWSSecretAccessKey>
+        Secure: true  ; optional
+    ]
 ]
 
-sys/make-scheme bind [
-	title: "Amazon S3 Protocol"
-	name: 's3
+do http://reb4.me/r/http-custom
 
-	actor: [
-		open: funct [port [port!]] [
-			port/spec/path: any [port/spec/path "/"]
+make object! bind [
+    port-flags: system/standard/port-flags/pass-thru
 
-			subport: make port! rejoin [
-				either settings/secure [https://][http://]
-				any [select port/spec 'user settings/awsaccesskeyid] ":"
-				any [select port/spec 'pass settings/awssecretaccesskey] "@"
-				port/spec/host ".s3.amazonaws.com" port/spec/path
-			]
+    init: use [chars url] [
+        chars: charset [
+            "-_!+%.,"
+            #"0" - #"9"
+            #"a" - #"z" #"A" - #"Z"
+        ]
 
-			subport/locals: context [
-				parent: port
-				response: none
-			]
+        url: [
+            "s3://" [
+                copy user some chars
+                #":"
+                copy pass some chars
+                #"@"
+                |
+                (
+                    user: none
+                    pass: none
+                )
+            ]
 
-			port/locals: context compose [
-				subport: (subport)
-				response: none
-			]
+            copy host some chars
+            #"/"
+            copy path any [
+                some chars
+                #"/"
+            ]
+            copy target any chars
 
-			port
-		]
+            end
 
-		open?: func [port [port!]][
-			all [
-				port/locals
-				open? port/locals/subport
-			]
-		]
+            (
+                path: if path [
+                    to file! path
+                ]
 
-		read: func [port [port!]][
-			open port
-			send "GET" port/locals/subport none
-		]
+                target: if target [
+                    to file! target
+                ]
 
-		write: func [port [port!] content [none! string! binary! block!]][
-			case/all [
-				none? content [content: #{}]
-				not block? content [content: join [body:] content]
-				block? content [content: make request content]
-			]
+                user: any [
+                    user
+                    settings/awsaccesskeyid
+                ]
 
-			open port
-			send "PUT" port/locals/subport content
-		]
+                pass: any [
+                    pass
+                    settings/awssecretaccesskey
+                ]
 
-		delete: func [port [port!]][
-			open port
-			send "DELETE" port/locals/subport none
-		]
+                url: rejoin [
+                    s3:// host "/"
+                    any [path ""]
+                    any [target ""]
+                ]
+            )
+        ]
 
-		query: func [port /local headers][
-			open port
+        func [port spec] [
+            if not all [
+                url? spec
+                parse/all spec bind url port
+            ][
+                make error! "Invalid S3 Spec"
+            ]
 
-			if headers: send "HEAD" port/locals/subport none [
-				context [
-					name: port/spec/ref
-					size: any [headers/content-length 0]
-					date: headers/last-modified
-					type: either dir? port/spec/ref ['dir]['file]
-					content-type: headers/content-type
-				]
-			]
-		]
+            spec: rejoin [
+                either settings/secure [
+                    https://
+                ][
+                    http://
+                ]
 
-		close: func [port][
-			close port/locals/subport
-		]
-	]
-] context [
-	settings: make context [
-		awsaccesskeyid: awssecretaccesskey: ""
-		secure: false
-	] any [
-		system/script/args
-		bind system/script/header/settings system/contexts/user
-	]
+                port/host ".s3.amazonaws.com/"
 
-	request: context [body: size: type: md5: access: none]
+                any [
+                    all [
+                        port/target
+                        port/path
+                    ]
+                    ""
+                ]
 
-	send: use [timestamp detect-mime sign compose-request response][
-		timestamp: func [/for date [date!]][
-			date: any [date now]
-			date/time: date/time - date/zone
+                any [
+                    port/target
+                    ""
+                ]
+            ]
 
-			rejoin [
-				copy/part pick system/locale/days date/weekday 3 
-				", " next form 100 + date/day " " 
-				copy/part pick system/locale/months date/month 3 
-				" " date/year " "
-				next form 100 + date/time/hour ":"
-				next form 100 + date/time/minute ":"
-				next form 100 + to-integer date/time/second " GMT" 
-			]
-		]
+            port/sub-port: make port! spec
+        ]
+    ]
 
-		detect-mime: use [types][
-			types: [
-				application/octet-stream
-				text/html %.html %.htm
-				image/jpeg %.jpg %.jpeg
-				image/png %.png
-				image/tiff %.tif %.tiff
-				application/pdf %.pdf
-				text/plain %.txt %.r
-				application/xml %.xml
-				video/mpeg %.mpg %.mpeg
-				video/x-m4v %.m4v
-			]
+    open: use [options] [
+        options: make object! [
+            options:
+            modes:
+            type:
+            md5:
+            access:
+            prefix: _
+        ]
 
-			func [file [file! url! string! none!]][
-				if file [
-					file: any [find types suffix? file next types]
-					first find/reverse file path!
-				]
-			]
-		]
+        func [port] [
+            port/state/flags: port/state/flags or port-flags
 
-		sign: func [verb [string!] spec [object!] request [object!]][
-			rejoin [
-				"AWS " spec/user ":" enbase/base checksum/secure/key rejoin [
-					#{} verb newline
-					newline ; any [port/locals/md5 ""] newline
-					any [request/type ""] newline
-					timestamp newline
-					either request/access [join "x-amz-acl:" [request/access "^/"]][""]
-					"/" copy/part spec/host find/last spec/host ".s3.amazonaws.com" spec/path
-				] spec/pass 64
-			]
-		]
+            port/locals: make options [
+                modes: make block! 3
 
-		compose-request: func [
-			method [string!] port [port!] content [object! none!]
-			/local prefix
-		][
-			content: any [content make request []]
+                if port/state/flags and 1 > 0 [
+                    append modes 'read
+                ]
 
-			content/size: all [content/body length? content/body]
-			content/type: all [content/body form any [content/type detect-mime port/spec/path]]
-			content/access: all [
-				content/body switch/default content/access [
-					read ["public-read"] write ["public-read-write"]
-				][content/access]
-			]
+                if port/state/flags and 2 > 0 [
+                    append modes 'write
+                ]
 
-			port/spec/method: method
-			port/spec/content: content/body
+                if port/state/flags and 32 > 0 [
+                    append modes 'binary
+                ]
 
-			if parse port/spec/path [skip thru #"/"][
-				prefix: remove port/spec/path
-				port/spec/path: copy "/"
-			]
+                options: any [
+                    port/state/custom
+                    make block! 0
+                ]
 
-			port/spec/headers: collect [
-				foreach [header value][
-					Date: [timestamp]
-					Content-Type: [content/type]
-					Content-Length: [content/size]
-					Authorization: [sign method port/spec content]
-					x-amz-acl: [content/access]
-					Pragma: ["no-cache"]
-					Cache-Control: ["no-cache"]
-				][
-					if value: all :value [
-						keep header
-						keep form value
-					]
-				]
-			]
+                if all [
+                    port/path
+                    not port/target
+                ][
+                    repend options [
+                        'prefix port/path
+                    ]
+                ]
 
-			if prefix [append port/spec/path join "?prefix=" prefix]
-		]
+                parse options [
+                    any [
+                        'md5
+                        set md5 string!
+                        |
+                        'type
+                        set type path!
+                        (type: form type)
+                        |
+                        'read
+                        (access: "public-read")
+                        |
+                        'write
+                        (access: "public-read-write")
+                        |
+                        'prefix
+                        set prefix [
+                            string! | file!
+                        ]
+                        (
+                            if not port/target [
+                                port/sub-port/path: join "?prefix=" prefix
+                            ]
+                        )
+                        |
+                        skip
+                    ]
+                ]
+            ]
+        ]
+    ]
 
-		send: func [[catch] method [string!] port [port!] content [any-type!]][
-			compose-request method port content
+    copy: func [port] [
+        send "GET" port _
+    ]
 
-			port/awake: func [event][
-				switch event/type [
-					connect [read event/port false]
-					done [true]
-				]
-			]
+    insert: func [port data] [
+        if not port/target [
+            make error! "Not a valid S3 key"
+        ]
 
-			open port
-			response: query port
+        case [
+            none? data [
+                send "DELETE" port _
+            ]
 
-			; unless port?
-			wait [port 1]
-			; [make error! "No Response from Port"]
+            any [
+                string? data
+                binary? data
+            ][
+                send "PUT" port data
+            ]
 
-			port/locals/parent/data: switch/default response/response-parsed [
-				ok [
-					switch method [
-						"GET" [
-							either dir? response/name [
-								collect [
-									parse decode 'markup port/data use [name][
-										[any [thru <key> copy name string! (keep to file! name)]]
-									]
-								]
-							][port/data]
-						]
-						"PUT" [content/body]
-						"HEAD" [response/headers]
-					]
-				]
-				no-content [port/locals/parent] ; DELETE
-			][
-				make error! rejoin collect [
-					parse decode 'markup port/data use [message][
-						[
-							thru <Error> thru <Message> set message string!
-							(keep [message " (" skip response/response-line 9 ")"])
-						]
-					]
-				]
-			]
-		]
-	]
+            data [
+                send "PUT" port form data
+            ]
+        ]
+    ]
+
+    close: does []
+
+    query: func [port] [
+        port/locals: [
+            modes [read]
+        ]
+
+        send "HEAD" port _
+
+        port/size: attempt [
+            to integer! port/sub-port/locals/headers/content-length
+        ]
+
+        port/date: port/sub-port/date
+
+        port/status: either port/target [
+            'file
+        ][
+            'directory
+        ]
+    ]
+
+    if not in system/schemes 's3 [
+        system/schemes: make system/schemes [
+            s3: _
+        ]
+    ]
+
+    system/schemes/s3: make system/standard/port compose [
+        scheme: 's3
+        port-id: 0
+        handler: (self)
+        passive: _
+        cache-size: 5
+        proxy: make object! [
+            host:
+            port-id:
+            user:
+            pass:
+            type:
+            bypass: _
+        ]
+    ]
+]
+
+make object! [
+    _: none
+
+    settings: make context [
+        awsaccesskeyid:
+        awssecretaccesskey: ""
+        secure: true
+    ] any [
+        system/script/args
+        system/script/header/settings
+    ]
+
+    get-http-response: func [port] [
+        reform next parse do bind [response-line] last second get in port/handler 'open none
+    ]
+
+    send: use [timestamp detect-mime sign compose-request] [
+        timestamp: func [/for date [date!]] [
+            date: any [
+                date
+                now
+            ]
+            date/time: date/time - date/zone
+
+            rejoin [
+                copy/part pick system/locale/days date/weekday 3
+                ", "
+                next form 100 + date/day
+                " "
+                copy/part pick system/locale/months date/month 3
+                " "
+                date/year
+                " "
+                next form 100 + date/time/hour
+                ":"
+                next form 100 + date/time/minute
+                ":"
+                next form 100 + to integer! date/time/second
+                " GMT"
+            ]
+        ]
+
+        detect-mime: use [types] [
+            types: [
+                application/octet-stream
+                text/html %.html %.htm
+                image/jpeg %.jpg %.jpeg
+                image/png %.png
+                image/tiff %.tif %.tiff
+                application/pdf %.pdf
+                text/plain %.txt %.r
+                application/xml %.xml
+                video/mpeg %.mpg %.mpeg
+                video/x-m4v %.m4v
+            ]
+
+            func [
+                file [file! url! none!]
+            ][
+                if file [
+                    file: any [
+                        find types suffix? file
+                        next types
+                    ]
+
+                    form first find/reverse file path!
+                ]
+            ]
+        ]
+
+        sign: func [
+            verb [string!]
+            port [port!]
+            request [object!]
+        ][
+            rejoin [
+                "AWS " port/user ":"
+                enbase/base checksum/secure/key rejoin [
+                    form verb
+                    newline
+                    newline  ; any [port/locals/md5 ""] newline
+                    any [
+                        request/type ""
+                    ]
+                    newline
+                    timestamp
+                    newline
+                    either request/auth [
+                        rejoin [
+                            "x-amz-acl:" request/auth "^/"
+                        ]
+                    ][
+                        ""
+                    ]
+                    "/" port/host
+                    "/" any [
+                        all [
+                            port/target
+                            port/path
+                        ] ""
+                    ]
+                    any [
+                        port/target ""
+                    ]
+                ] port/pass 64
+            ]
+        ]
+
+        compose-request: func [
+            verb [string!]
+            port [port!]
+            data [series! none!]
+        ][
+            data: make object! [
+                body: any [
+                    data ""
+                ]
+
+                size: all [
+                    data
+                    length? data
+                ]
+
+                type: all [
+                    data any [
+                        port/locals/type
+                        detect-mime port/target
+                    ]
+                ]
+
+                auth: all [
+                    data
+                    port/locals/access
+                ]
+            ]
+
+            reduce [
+                to-word verb data/body
+
+                foreach [header value] [
+                    "Date" [timestamp]
+                    "Content-Type" [data/type]
+                    "Content-Length" [data/size]
+                    "Authorization" [sign verb port data]
+                    "x-amz-acl" [data/auth]
+                    "Pragma" ["no-cache"]
+                    "Cache-Control" ["no-cache"]
+                ][
+                    if value: all :value [
+                        repend [] [
+                            to-set-word header
+                            form value
+                        ]
+                    ]
+                ]
+            ]
+        ]
+
+        send: func [
+            [catch]
+            method [string!]
+            port [port!]
+            data [any-type!]
+        ][
+            either error? data: try [
+                open/mode/custom port/sub-port port/locals/modes compose-request method port data
+            ][
+                net-error rejoin [
+                    "Target url " port/url " could not be retrieved "
+                    "(" get-http-response port/sub-port ")."
+                ]
+            ][
+                data: copy port/sub-port
+
+                either port/target [
+                    data
+                ][
+                    unless method = "HEAD" [
+                        data: load/markup data
+                        parse data [
+                            copy data any [
+                                data:
+                                <key>
+                                (
+                                    remove data
+                                    change data to-file data/1
+                                )
+                                |
+                                skip
+                                (
+                                    remove data
+                                )
+                                :data
+                            ]
+                        ]
+                        data
+                    ]
+                ]
+            ]
+        ]
+    ]
 ]
