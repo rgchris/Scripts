@@ -3,12 +3,12 @@ Rebol [
     Author: "Christopher Ross-Gill"
     Date: 18-Sep-2015
     Home: http://www.ross-gill.com/page/JSON_and_Rebol
-    File: %altjson.r
+    File: %altjson.r3
     Version: 0.3.6
     Purpose: "Convert a Rebol block to a JSON string"
     Rights: http://opensource.org/licenses/Apache-2.0
-    Type: 'module
-    Name: 'rgchris.altjson
+    Type: module
+    Name: rgchris.altjson
     Exports: [load-json to-json]
     History: [
         18-Sep-2015 0.3.6 "Non-Word keys loaded as strings"

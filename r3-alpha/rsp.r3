@@ -1,23 +1,27 @@
 Rebol [
     Title: "RSP Preprocessor"
-    Author: "Christopher Ross-Gill"
     Date: 12-Jun-2013
+    Author: "Christopher Ross-Gill"
     Home: http://ross-gill.com/page/RSP
     File: %rsp.r3
     Version: 0.4.0
     Purpose: {Rebol-embedded Markup}
     Rights: http://opensource.org/licenses/Apache-2.0
+
     Type: module
     Name: rgchris.rsp
-    Exports: [sanitize load-rsp render render-each]
+    Exports: [
+        sanitize build-tag load-rsp render render-each
+    ]
+
     Notes: "Extracted from QuarterMaster"
 ]
 
-sanitize: use [ascii html* extended][
+sanitize: use [ascii html* extended] [
     html*: exclude ascii: charset ["^/^-" #"^(20)" - #"^(7E)"] charset {&<>"}
     extended: complement charset [#"^(00)" - #"^(7F)"]
 
-    func [text [any-string!] /local char][
+    func [text [any-string!] /local char] [
         parse/all form text [
             copy text any [
                 text: some html*
@@ -31,14 +35,106 @@ sanitize: use [ascii html* extended][
     ]
 ]
 
-load-rsp: use [prototype to-set-block][
-    prototype: context [
-        out*: "" prin: func [val][repend out* val]
-        print: func [val][prin val prin newline]
+build-tag: use [to-name slash] [
+    to-name: func [name [word! path!]] [
+        back replace/all next mold name "/" ":"
     ]
 
-    to-set-block: func [block [block! object!] /local word][
-        either object? block [block: third block][
+    slash: first [/]
+
+    make action! [
+        [
+            "Generates a tag from a composed block."
+            values [block!] "Block of parens to evaluate and other data."
+            /local tag has-value xml? name is-name value
+        ]
+        [
+            xml?: false
+
+            tag: collect [
+                is-name: [
+                    word! | and path! into [word! word!]
+                ]
+
+                has-value: [
+                    [
+                        set value [get-word! | get-path! | group!] (
+                            value: eval value
+                        )
+                        |
+                        and not [slash | is-name]
+                        set value skip
+                    ]
+                    (
+                        value: switch type?/word :value [
+                            text! url! email! [value]
+                            logic! blank! [either :value [name] [_]]
+                            binary! [enbase value]
+                            tag! [to text! value]
+                            file! [replace/all as text! value #" " "%20"]
+                            char! [form value]
+                            date! [
+                                ; form-date value "%c"
+                                form value
+                            ]
+                            tuple! [unspaced ["#" enbase/base to binary! value 16]]
+                            issue! integer! decimal! money! time! percent! [mold value]
+                            lit-word! [as text! value]
+                            (_)
+                        ]
+                    )
+                ]
+
+                parse values [
+                    set name ['?xml (xml?: true) | is-name] (
+                        keep to-name name
+                    )
+                    any [
+                        slash end (
+                            keep either xml? ["?"] [" /"]
+                            xml?: false
+                        )
+                        |
+                        set name is-name [
+                            has-value (
+                                if value [
+                                    keep unspaced [
+                                        " " to-name name {="} sanitize form value {"}
+                                    ]
+                                ]
+                            )
+                            |
+                            (
+                                keep " "
+                                keep to-name name
+                            )
+                        ]
+                    ]
+                    end (
+                        if xml? [keep "?"]
+                    )
+                    |
+                    and set name path! into [blank! word! opt word!] to end (
+                        keep to-name name
+                    )
+                    |
+                    end (tag: [])
+                ]
+            ]
+
+            if tag: unspaced tag [to tag! tag]
+        ]
+    ]
+]
+
+load-rsp: use [prototype to-set-block] [
+    prototype: context [
+        out*: "" prin: func [val] [repend out* val]
+        print: func [val] [prin val prin newline]
+    ]
+
+    to-set-block: func [block [block! object!] /local word] [
+        either object? block [block: third block] [
             parse copy block [
                 (block: copy [])
                 any [set word word! (repend block [to-set-word word get/any word])]
@@ -47,7 +143,7 @@ load-rsp: use [prototype to-set-block][
         block
     ]
 
-    func [body [string!] /local code mk][
+    func [body [string!] /local code mk] [
         code: make string! length? body
 
         append code "^/out*: make string! {}^/"
@@ -58,7 +154,7 @@ load-rsp: use [prototype to-set-block][
                       "==" copy mk to "%>" (repend code ["prin sanitize form (" mk "^/)^/"])
                     | "=" copy mk to "%>" (repend code ["prin (" mk "^/)^/"])
                     | [#":" | #"!"] copy mk to "%>" (repend code ["prin build-tag [" mk "^/]^/"])
-                    | #"#" to "%>" ; comment
+                    | #"#" to "%>"  ; comment
                     | copy mk to "%>" (repend code [mk newline])
                     | (throw make error! "Expected '%>'")
                 ] 2 skip
@@ -73,8 +169,8 @@ load-rsp: use [prototype to-set-block][
     ]
 ]
 
-render: use [depth*][
-    depth*: 0 ;-- to break recursion
+render: use [depth*] [
+    depth*: 0  ; -- to break recursion
 
     func [
         rsp [file! url! string!]

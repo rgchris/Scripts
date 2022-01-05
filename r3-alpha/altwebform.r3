@@ -3,12 +3,12 @@ Rebol [
     Author: "Christopher Ross-Gill"
     Date: 6-Sep-2015
     Home: http://www.ross-gill.com/page/Web_Forms_and_REBOL
-    File: %altwebform.r
+    File: %altwebform.r3
     Version: 0.10.2
     Purpose: "Convert a Rebol block to a URL-Encoded Web Form string"
     Rights: http://opensource.org/licenses/Apache-2.0
-    Type: 'module
-    Name: 'rgchris.altwebform
+    Type: module
+    Name: rgchris.altwebform
     Exports: [url-decode url-encode load-webform to-webform]
     History: [
         06-Sep-2015 0.10.2 "Tidy/Detab"
@@ -18,9 +18,9 @@ Rebol [
         27-Feb-2013  0.9.2 "Correct encoding of UTF-8 values"
         18-Nov-2009  0.1.0 "Original Version"
     ]
-    Example: [
-        "a=3&aa.a=1&b.c=1&b.c=2"
-        [a "3" aa [a "1"] b [c ["1" "2"]]]
+    Usage: [
+        load-webform "a=3&aa.a=1&b.c=1&b.c=2"
+        to-webform [a "3" aa [a "1"] b [c ["1" "2"]]]
     ]
 ]
 

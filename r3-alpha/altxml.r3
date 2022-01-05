@@ -3,12 +3,12 @@ Rebol [
     Author: "Christopher Ross-Gill"
     Date: 22-Oct-2009
     Home: http://www.ross-gill.com/page/XML_and_REBOL
-    File: %altxml.r
+    File: %altxml.r3
     Version: 0.4.1
     Purpose: "XML handler for Rebol v3"
     Rights: http://opensource.org/licenses/Apache-2.0
-    Type: 'module
-    Name: 'rgchris.altxml
+    Type: module
+    Name: rgchris.altxml
     Exports: [load-xml decode-xml]
     History: [
         07-Apr-2014 0.4.1 "Fixed loop when handling unterminated empty tags"
