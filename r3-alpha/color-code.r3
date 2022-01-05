@@ -18,11 +18,11 @@ Rebol [
 ]
 
 ; cross-posted from %rsp.r3
-sanitize: use [ascii html* extended][
+sanitize: use [ascii html* extended] [
     html*: exclude ascii: charset ["^/^-" #"^(20)" - #"^(7E)"] charset {&<>"}
     extended: complement charset [#"^(00)" - #"^(7F)"]
 
-    func [text [any-string!] /local char][
+    func [text [any-string!] /local char] [
         parse form text [
             copy text any [
                 text: some html*
@@ -36,13 +36,13 @@ sanitize: use [ascii html* extended][
     ]
 ]
 
-script?: use [space id mark type][
+script?: use [space id mark type] [
     space: charset " ^-"
     id: [
-        any space mark: 
+        any space mark:
         any ["[" mark: (mark: back mark) any space]
         copy type ["Rebol" | "Red" opt "/System" | "World" | "Topaz" | "Freebell"] (
-            type: first find [ ; normalize capitalization
+            type: first find [  ; normalize capitalization
                 "Rebol" "Red" "Red/System" "World" "Topaz" "Freebell"
             ] type
         )
@@ -50,7 +50,7 @@ script?: use [space id mark type][
         "[" to end
     ]
 
-    func [source [string! binary!] /language][
+    func [source [string! binary!] /language] [
         if all [
             parse source [
                 some [
@@ -60,33 +60,33 @@ script?: use [space id mark type][
                 ]
             ]
             mark
-        ][either language [type][mark]]
+        ][either language [type] [mark]]
     ]
 ]
 
-load-next: func [string [string!] /local out][
+load-next: func [string [string!] /local out] [
     out: transcode/next to binary! string
     out/2: skip string subtract length? string length? to string! out/2
     out
 ]
 
-load-header: func [[catch] source [string! binary!] /local header][
+load-header: func [[catch] source [string! binary!] /local header] [
     source: to string! source
     unless header: script? source [make error! "Source does not contain header."]
     header: find next header "["
-    unless header: attempt [load-next header][make error! "Header is incomplete."]
+    unless header: attempt [load-next header] [make error! "Header is incomplete."]
     reduce [construct/with header/1 system/standard/script header/2]
 ]
 
-color-code: use [out emit emit-var emit-header rule value][
+color-code: use [out emit emit-var emit-header rule value] [
     out: none
-    emit: func [data][
+    emit: func [data] [
         data: reduce compose [(data)]
         until [append out take data empty? data]
     ]
 
-    emit-var: func [value start stop /local type out][
-        either none? :value [type: "cmt"][
+    emit-var: func [value start stop /local type out] [
+        either none? :value [type: "cmt"] [
             if path? :value [value: first :value]
 
             type: either word? :value [
@@ -110,7 +110,7 @@ color-code: use [out emit emit-var emit-header rule value][
         ]
     ]
 
-    rule: use [str new rule hx][
+    rule: use [str new rule hx] [
         hx: charset "0123456789abcdefABCDEF"
 
         rule: [
@@ -119,11 +119,11 @@ color-code: use [out emit emit-var emit-header rule value][
                 some [" " | tab] new: (emit copy/part str new) |
                 [crlf | newline] (emit "^/") |
                 #";" [thru newline | to end] new:
-                    (emit-var none str new) |
+                (emit-var none str new) |
                 [#"[" | #"("] (emit first str) rule |
                 [#"]" | #")"] (emit first str) break |
                 [8 hx | 4 hx | 2 hx] #"h" new:
-                    (emit-var 0 str new) |
+                (emit-var 0 str new) |
                 skip (
                     set [value new] load-next str
                     emit-var :value str new
@@ -151,7 +151,7 @@ color-code: use [out emit emit-var emit-header rule value][
                 {<var class="dt-preamble">}
                 sanitize copy/part head text text
                 "</var>"
-            ] 
+            ]
         ]
 
         parse text [rule]

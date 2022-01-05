@@ -1,15 +1,19 @@
 Rebol [
     Title: "JSON Parser for Rebol 3"
-    Author: "Christopher Ross-Gill"
     Date: 18-Sep-2015
+    Author: "Christopher Ross-Gill"
     Home: http://www.ross-gill.com/page/JSON_and_Rebol
     File: %altjson.r3
     Version: 0.3.6
     Purpose: "Convert a Rebol block to a JSON string"
     Rights: http://opensource.org/licenses/Apache-2.0
+
     Type: module
     Name: rgchris.altjson
-    Exports: [load-json to-json]
+    Exports: [
+        load-json to-json
+    ]
+
     History: [
         18-Sep-2015 0.3.6 "Non-Word keys loaded as strings"
         17-Sep-2015 0.3.5 "Added GET-PATH! lookup"
@@ -28,6 +32,7 @@ Rebol [
         06-Aug-2010 0.2.2 "Issue! composed of digits encoded as integers"
         22-May-2005 0.1.0 "Original Version"
     ]
+
     Notes: {
         - Converts date! to RFC 3339 Date String
     }
@@ -39,7 +44,7 @@ load-json: use [
 ][
     branch: make block! 10
 
-    emit: func [val][here: insert/only here val]
+    emit: func [val] [here: insert/only here val]
     new-child: [(insert/only branch insert/only here here: make block! 10)]
     to-parent: [(here: take branch)]
     neaten: [
@@ -47,7 +52,7 @@ load-json: use [
         (new-line/all/skip head here true 2)
     ]
 
-    to-word: use [word1 word+][
+    to-word: use [word1 word+] [
         ; upper ranges borrowed from AltXML
         word1: charset [
             "!&*=?ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz|~"
@@ -65,7 +70,7 @@ load-json: use [
             #"^(f900)" - #"^(FDCF)" #"^(FDF0)" - #"^(FFFD)"
         ]
 
-        func [val [string!]][
+        func [val [string!]] [
             all [
                 parse val [word1 any word+]
                 to word! val
@@ -73,22 +78,22 @@ load-json: use [
         ]
     ]
 
-    space: use [space][
+    space: use [space] [
         space: charset " ^-^/^M"
         [any space]
     ]
 
     comma: [space #"," space]
 
-    number: use [dg ex nm as-num][
+    number: use [dg ex nm as-num] [
         dg: charset "0123456789"
         ex: [[#"e" | #"E"] opt [#"+" | #"-"] some dg]
         nm: [opt #"-" some dg opt [#"." some dg] opt ex]
 
-        as-num: func [val [string!]][
+        as-num: func [val [string!]] [
             case [
-                not parse val [opt "-" some dg][to decimal! val]
-                not integer? try [val: to integer! val][to issue! val]
+                not parse val [opt "-" some dg] [to decimal! val]
+                not integer? try [val: to integer! val] [to issue! val]
                 val [val]
             ]
         ]
@@ -96,13 +101,13 @@ load-json: use [
         [copy val nm (val: as-num val)]
     ]
 
-    string: use [ch es hx mp decode][
+    string: use [ch es hx mp decode] [
         ch: complement charset {\"}
         es: charset {"\/bfnrt}
         hx: charset "0123456789ABCDEFabcdef"
         mp: [#"^"" "^"" #"\" "\" #"/" "/" #"b" "^H" #"f" "^L" #"r" "^M" #"n" "^/" #"t" "^-"]
 
-        decode: use [ch mk escape][
+        decode: use [ch mk escape] [
             escape: [
                 ; should be possible to use CHANGE keyword to replace escaped characters.
                 mk: #"\" [
@@ -114,8 +119,8 @@ load-json: use [
                 ] :mk
             ]
 
-            func [text [string! none!]][
-                either none? text [make string! 0][
+            func [text [string! none!]] [
+                either none? text [make string! 0] [
                     all [parse text [any [to "\" escape] to end] text]
                 ]
             ]
@@ -124,15 +129,15 @@ load-json: use [
         [#"^"" copy val [any [some ch | #"\" [#"u" 4 hx | es]]] #"^"" (val: decode val)]
     ]
 
-    block: use [list][
+    block: use [list] [
         list: [space opt [value any [comma value]] space]
 
         [#"[" new-child list #"]" neaten/1 to-parent]
     ]
 
-    _content: [#"{" space {"_content"} space #":" space value space "}"] ; Flickr
+    _content: [#"{" space {"_content"} space #":" space value space "}"]  ; Flickr
 
-    object: use [name list as-map][
+    object: use [name list as-map] [
         name: [
             string space #":" space (
                 emit either is-flat [
@@ -151,7 +156,7 @@ load-json: use [
         [#"{" new-child list #"}" neaten/2 to-parent as-map]
     ]
 
-    ident: use [initial ident][
+    ident: use [initial ident] [
         initial: charset ["$_" #"a" - #"z" #"A" - #"Z"]
         ident: union initial charset [#"0" - #"9"]
 
@@ -159,7 +164,7 @@ load-json: use [
     ]
 
     value: [
-          "null" (emit none)
+        "null" (emit none)
         | "true" (emit true)
         | "false" (emit false)
         | number (emit val)
@@ -175,8 +180,8 @@ load-json: use [
         /padded "Loads JSON data wrapped in a JSONP envelope"
     ][
         case/all [
-            any [file? json url? json][
-                if error? json: try [read/string (json)][
+            any [file? json url? json] [
+                if error? json: try [read/string (json)] [
                     do :json
                 ]
             ]
@@ -202,35 +207,35 @@ to-json: use [
     json emit emits escape emit-issue emit-date
     here lookup comma block object block-of-pairs value
 ][
-    emit: func [data][repend json data]
-    emits: func [data][emit {"} emit data emit {"}]
+    emit: func [data] [repend json data]
+    emits: func [data] [emit {"} emit data emit {"}]
 
-    escape: use [mp ch encode][
+    escape: use [mp ch encode] [
         mp: [#"^/" "\n" #"^M" "\r" #"^-" "\t" #"^"" "\^"" #"\" "\\" #"/" "\/"]
         ch: intersect ch: charset [#" " - #"~"] difference ch charset extract mp 2
 
-        encode: func [here][
+        encode: func [here] [
             change/part here any [
                 select mp here/1
                 rejoin ["\u" skip tail form to-hex to integer! here/1 -4]
             ] 1
         ]
 
-        func [txt][
+        func [txt] [
             parse txt [any [txt: some ch | skip (txt: encode txt) :txt]]
             head txt
         ]
     ]
 
-    emit-issue: use [dg nm mk][
+    emit-issue: use [dg nm mk] [
         dg: charset "0123456789"
         nm: [opt "-" some dg]
 
-        [(either parse next form here/1 [copy mk nm][emit mk][emits here/1])]
+        [(either parse next form here/1 [copy mk nm] [emit mk] [emits here/1])]
     ]
 
-    emit-date: use [pad second][
-        pad: func [part length][part: to string! part head insert/dup part "0" length - length? part]
+    emit-date: use [pad second] [
+        pad: func [part length] [part: to string! part head insert/dup part "0" length - length? part]
 
         quote (
             emits rejoin collect [
@@ -246,9 +251,11 @@ to-json: use [
                     keep either any [
                         none? here/1/zone
                         zero? here/1/zone
-                    ]["Z"][
+                    ][
+                        "Z"
+                    ][
                         reduce [
-                            either here/1/zone/hour < 0 ["-"]["+"]
+                            either here/1/zone/hour < 0 ["-"] ["+"]
                             pad abs here/1/zone/hour 2 ":" pad here/1/zone/minute 2
                         ]
                     ]
@@ -303,8 +310,8 @@ to-json: use [
         | any-type! (emits to tag! type? first here)
     ]
 
-    func [data][
+    func [data] [
         json: make string! 1024
-        if parse compose/only [(data)][here: value][json]
+        if parse compose/only [(data)] [here: value] [json]
     ]
 ]

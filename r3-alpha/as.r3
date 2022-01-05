@@ -13,7 +13,7 @@ Rebol [
     ]
 ]
 
-wrap: func [body [block!]][
+wrap: func [body [block!]] [
     use collect [
         parse body [
             any [body: set-word! (keep to word! body/1) | skip]
@@ -31,7 +31,7 @@ amend: wrap [
     hex: union digit charset [#"A" - #"F" #"a" - #"f"]
 
     symbol: file*: union alphanum charset "_-"
-    url-: union alphanum charset "!'*,-._~" ; "!*-._"
+    url-: union alphanum charset "!'*,-._~"  ; "!*-._"
     url*: union url- charset ":+%&=?"
 
     space: charset " ^-"
@@ -51,7 +51,7 @@ amend: wrap [
     wordify-punct: charset "-_()!"
 
     ucs: charset ""
-    utf-8: use [utf-2 utf-3 utf-4 utf-5 utf-b][
+    utf-8: use [utf-2 utf-3 utf-4 utf-5 utf-b] [
         utf-2: #[bitset! 64#{AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/////wAAAAA=}]
         utf-3: #[bitset! 64#{AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP//AAA=}]
         utf-4: #[bitset! 64#{AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/wA=}]
@@ -61,11 +61,11 @@ amend: wrap [
         [utf-2 1 utf-b | utf-3 2 utf-b | utf-4 3 utf-b | utf-5 4 utf-b]
     ]
 
-    get-ucs-code: decode-utf: use [utf-os utf-fc int][
+    get-ucs-code: decode-utf: use [utf-os utf-fc int] [
         utf-os: [0 192 224 240 248 252]
         utf-fc: [1 64 4096 262144 16777216]
 
-        func [char][
+        func [char] [
             int: 0
             char: change char char/1 xor pick utf-os length? char
             forskip char 1 [change char char/1 xor 128]
@@ -87,7 +87,7 @@ amend: wrap [
     wiki: [some [wiki* | utf-8]]
     ws*: white-space: [some ws]
 
-    amend: func [rule [block!]][
+    amend: func [rule [block!]] [
         bind rule 'amend
     ]
 ]
@@ -107,7 +107,7 @@ as: wrap [
         'key      [word 0 6 [#"." word]]
     ]
 
-    load-date: func [date [string!]][
+    load-date: func [date [string!]] [
         all [
             date: attempt [load date]
             date? date
@@ -115,7 +115,7 @@ as: wrap [
         ]
     ]
 
-    load-rfc3339: func [date [string!]][
+    load-rfc3339: func [date [string!]] [
         if parse/all date amend [
             copy date [
                 3 5 digit "-" 1 2 digit "-" 1 2 digit
@@ -133,7 +133,7 @@ as: wrap [
         ]
     ]
 
-    load-rfc822: use [day month][
+    load-rfc822: use [day month] [
         ; http://www.w3.org/Protocols/rfc822/#z28
 
         day: ["Mon" | "Tue" | "Wed" | "Thu" | "Fri" | "Sat" | "Sun"]
@@ -144,12 +144,12 @@ as: wrap [
         ]
 
         ; "Tue, 08 Jan 2013 15:19:11 UTC"
-        func [date [string!] /local part checked][
+        func [date [string!] /local part checked] [
             date: collect [
                 checked: parse/all date amend [
                     any space
                     day ", "
-                    copy part 1 2 digit (keep part) ; permissive--spec says 2 digit
+                    copy part 1 2 digit (keep part)  ; permissive--spec says 2 digit
                     " " (keep "-")
                     copy part month (keep part)
                     " " (keep "-")
@@ -166,11 +166,11 @@ as: wrap [
                         | ["CST" | "MDT"] (keep "-6:00")
                         | ["MST" | "PDT"] (keep "-7:00")
                         | "PST" (keep "-8:00")
-                        | part: upper ( ; though not using PARSE/CASE
+                        | part: upper (  ; though not using PARSE/CASE
                             part: to integer! uppercase first part
                             case [
                                 part < 74 [keep reduce ["+" part - 64 ":00"]]
-                                part = 74 [keep now/zone] ; J is local time
+                                part = 74 [keep now/zone]  ; J is local time
                                 part < 78 [keep reduce ["+" part - 65 ":00"]]
                                 part > 77 [keep reduce ["-" part - 77 ":00"]]
                             ]
@@ -182,7 +182,7 @@ as: wrap [
                         )
                     ]
                     any space
-                    end ; expects date to be the only content in the string
+                    end  ; expects date to be the only content in the string
                 ]
             ]
             if checked [load-date rejoin date]
@@ -195,9 +195,9 @@ as: wrap [
     ][
         case/all [
             none? value [return none]
-            all [string? value any [type <> string! any-word? format]][value: trim value]
+            all [string? value any [type <> string! any-word? format]] [value: trim value]
             type = logic! [if find ["false" "off" "no" "0" 0 false off no #[false]] value [return false]]
-            all [string? value type = date!][
+            all [string? value type = date!] [
                 value: any [
                     load-date value
                     load-rfc3339 value
