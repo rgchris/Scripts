@@ -1,10 +1,10 @@
 Rebol [
     Title: "MessagePack Encoder/Decoder for Rebol 2"
     Author: "Christopher Ross-Gill"
-    Date: 30-Jan-2022
+    Date: 15-Feb-2022
     Home: https://gist.github.com/rgchris
     File: %msgpack.r
-    Version: 0.0.1
+    Version: 0.0.2
     Rights: http://opensource.org/licenses/Apache-2.0
     Purpose: {
         (De)Serialize MessagePack content
@@ -17,6 +17,7 @@ Rebol [
     ]
 
     History: [
+        15-Feb-2022 0.0.2 "Correct code for block! export"
         30-Jan-2022 0.0.1 "Proof of concept: streaming parser"
     ]
 
@@ -36,6 +37,7 @@ msgpack: make object! [
         'stream [word!]
         type [datatype!]
         size [word!]
+        handler [function!]
     ][
         either error? value: try [
             size: consume :stream size
@@ -117,22 +119,22 @@ msgpack: make object! [
                             ; 100
                             ;
                             either zero? value and 16 [
-                                ; 1000
+                                ; 1000 0x80-8F
                                 ;
                                 handler map! value and 15
                             ][
-                                ; 1001
+                                ; 1001 0x90-9F
                                 ;
                                 handler block! value and 15
                             ]
                         ][
-                            ; 101 
+                            ; 101 0xA0-BF
                             ;
                             get-part series string! value and 31 :handler
                         ]
                     ][
                         either zero? value and 32 [
-                            ; 110
+                            ; 110 0xC0-DF
                             ;
                             either zero? value and 16 [
                                 ; 1100 - 0xC0-CF
@@ -171,10 +173,10 @@ msgpack: make object! [
                                     217 [get-part series string! 'unsigned-8 :handler]
                                     218 [get-part series string! 'unsigned-16 :handler]
                                     219 [get-part series string! 'unsigned-32 :handler]
-                                    220 [get-container block! 'unsigned-16 :handler]
-                                    221 [get-container block! 'unsigned-32 :handler]
-                                    222 [get-container map! 'unsigned-16 :handler]
-                                    223 [get-container map! 'unsigned-32 :handler]
+                                    220 [get-container series block! 'unsigned-16 :handler]
+                                    221 [get-container series block! 'unsigned-32 :handler]
+                                    222 [get-container series map! 'unsigned-16 :handler]
+                                    223 [get-container series map! 'unsigned-32 :handler]
                                 ]
                             ]
                         ][
@@ -284,12 +286,12 @@ msgpack: make object! [
                             ]
 
                             65536 > length? value [
-                                unsigned-8 222  ; 0xDE
+                                unsigned-8 220  ; 0xDC
                                 unsigned-16 length? value
                             ]
 
                             <else> [
-                                unsigned-8 223  ; 0xDF
+                                unsigned-8 221  ; 0xDD
                                 unsigned-32 length? value
                             ]
                         ]
@@ -314,12 +316,8 @@ msgpack: make object! [
                                 signed-8 value
                             ]
 
-                            value < 0 [
-                                signed-8 value
-                            ]
-
                             value < 128 [
-                                unsigned-8 value
+                                signed-8 value
                             ]
 
                             value < 256 [
