@@ -392,8 +392,10 @@ zip: make object! [
                     ; check for potential overlapping entries
                     ;
                     entry/size: 30  ; entry header length 
-                    + entry/compressed + lengths/filename
-                    + lengths/extra + lengths/comment
+                    + entry/compressed
+                    + lengths/filename
+                    + lengths/extra
+                    + lengths/comment
 
                     has-valid-space? archive entry
                 ]
@@ -533,7 +535,7 @@ zip: make object! [
         ][
             new-line/all/skip collect [
                 while [
-                    probe entry: step index
+                    entry: step index
                 ][
                     keep entry/filename
                     keep unpack entry
@@ -564,7 +566,6 @@ zip: make object! [
             is-executable: no
             is-folder: no
             is-text: no
-
         ]
 
         case [
