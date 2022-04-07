@@ -4,7 +4,7 @@ Rebol [
     Author: "Christopher Ross-Gill"
     Home: http://www.ross-gill.com/
     File: %deflate.r
-    Version: 0.3.1
+    Version: 0.3.2
     Purpose: "DEFLATE de/compression including ZLIB/GZIP envelopes"
     Rights: http://opensource.org/licenses/Apache-2.0
 
@@ -16,6 +16,7 @@ Rebol [
     ]
 
     History: [
+        07-Apr-2022 0.3.2 "Tweaks to return correct end of compressed stream"
         04-Jan-2022 0.3.0 "Added INFLATE algorithm and wrapper"
         04-Jan-2022 0.2.0 "Added DEFLATE wrapper around COMPRESS"
         25-May-2015 0.1.0 "Rudimentary CRC Routine"
@@ -26,6 +27,9 @@ Rebol [
         https://github.com/foliojs/tiny-inflate
         https://github.com/jibsen/tinf
         https://gist.github.com/rgchris/d3fb5f6a6ea6d27ea3817c0e697ac25d
+
+        "Other"
+        https://www.zlib.net/
 
         gzip-platform [
             ; no yellow dots
@@ -210,6 +214,7 @@ tiny-inflate: make object! [
         base
         delta [integer!]
         start
+
         /local sum
     ][
         sum: start
@@ -220,7 +225,10 @@ tiny-inflate: make object! [
 
         repeat offset 30 - delta [
             poke bits offset + delta to integer! any [
-                attempt [(offset - 1) / delta]
+                attempt [
+                    (offset - 1) / delta
+                ]
+
                 0
             ]
         ]
@@ -327,6 +335,7 @@ tiny-inflate: make object! [
     ;
     get-bit: func [
         encoding
+
         /local bit
     ][
         ; check if tag is empty
@@ -356,6 +365,7 @@ tiny-inflate: make object! [
         encoding
         length [integer!]
         base [integer!]
+
         /local value
     ][
         either zero? length [
@@ -370,6 +380,7 @@ tiny-inflate: make object! [
             ]
 
             value: encoding/tag and shift/logical 65535 16 - length
+
             encoding/tag: shift/logical encoding/tag length
             encoding/bit-count: encoding/bit-count - length
 
@@ -396,7 +407,6 @@ tiny-inflate: make object! [
         current: 0
         length: 0
         tag: encoding/tag
-
 
         ; get more bits while code value is above sum
         ;
@@ -425,41 +435,44 @@ tiny-inflate: make object! [
         dst-tree
 
         /local
-        hlit hdist hclen
+        lengths-count distances-count code-lengths-count
         count length
         code-length symbol prev
     ][
         ; get 5 bits HLIT (257-286)
         ;
-        hlit: read-bits encoding 5 257
+        lengths-count: read-bits encoding 5 257
 
         ; get 5 bits HDIST (1-32)
         ;
-        hdist: read-bits encoding 5 1
+        distances-count: read-bits encoding 5 1
 
         ; get 4 bits HCLEN (4-19)
         ;
-        hclen: read-bits encoding 4 4
+        code-lengths-count: read-bits encoding 4 4
 
         change lengths array/initial 19 0
 
         ; read code lengths for code length alphabet
         ;
-        repeat offset hclen [
+        repeat offset code-lengths-count [
             ; get 3 bits code length (0-7)
             ;
             code-length: read-bits encoding 3 0
+
             poke lengths code-length-code-index/:offset + 1 code-length
         ]
 
         ; build code length tree
+        ;
         build-tree code-tree lengths 0 19
 
         ; decode code lengths for the dynamic trees
+        ;
         count: 1
 
         while [
-            count < (hlit + hdist + 1)
+            count < (lengths-count + distances-count + 1)
         ][
             symbol: decode-symbol encoding code-tree
 
@@ -470,7 +483,9 @@ tiny-inflate: make object! [
                     prev: pick lengths count - 1
                     length: read-bits encoding 2 3
 
-                    while [length > 0] [
+                    while [
+                        length > 0
+                    ][
                         poke lengths count prev
 
                         count: count + 1
@@ -483,7 +498,9 @@ tiny-inflate: make object! [
                     ;
                     length: read-bits encoding 3 3
 
-                    while [length > 0] [
+                    while [
+                        length > 0
+                    ][
                         poke lengths count 0
 
                         count: count + 1
@@ -496,9 +513,9 @@ tiny-inflate: make object! [
                     ;
                     length: read-bits encoding 7 11
 
-                    while [length > 0] [
-                        ; probe count
-
+                    while [
+                        length > 0
+                    ][
                         poke lengths count 0
 
                         count: count + 1
@@ -507,6 +524,7 @@ tiny-inflate: make object! [
                 ]
             ][
                 ; values 0-15 represent the actual code lengths
+                ;
                 poke lengths count symbol
                 count: count + 1
             ]
@@ -514,8 +532,8 @@ tiny-inflate: make object! [
 
         ; build dynamic trees
         ;
-        build-tree sym-tree lengths 0 hlit
-        build-tree dst-tree lengths hlit hdist
+        build-tree sym-tree lengths 0 lengths-count
+        build-tree dst-tree lengths lengths-count distances-count
 
         ()
     ]
@@ -529,7 +547,9 @@ tiny-inflate: make object! [
         encoding
         sym-tree
         dst-tree
-        /local symbol length distance offset
+
+        /local
+        symbol length distance offset
     ][
         until [
             symbol: decode-symbol encoding sym-tree
@@ -546,21 +566,20 @@ tiny-inflate: make object! [
                 ]
 
                 <else> [
-                    ; + 1 for 1-based indexing
-                    ;
                     symbol: 1 + symbol - 257
+                    ; + 1 for 1-based indexing
 
                     ; possibly get more bits from length code
                     ;
                     length: read-bits encoding length-bits/:symbol length-base/:symbol
 
-                    ; + 1 for 1-based indexing
-                    ;
                     distance: 1 + decode-symbol encoding dst-tree
+                    ; + 1 for 1-based indexing
 
                     ; possibly get more bits from distance code
                     ;
                     offset: length? encoding/target
+
                     offset: offset - read-bits encoding distance-bits/:distance distance-base/:distance
 
                     ; copy match
@@ -579,11 +598,14 @@ tiny-inflate: make object! [
     ;
     inflate-uncompressed-block: func [
         encoding
+
         /local length inverse-length
     ][
         ; unread from bitbuffer
         ;
-        while [encoding/bit-count > 8] [
+        while [
+            encoding/bit-count > 8
+        ][
             encoding/source: back encoding/source
             encoding/bit-count: encoding/bit-count - 8
         ]
@@ -598,10 +620,12 @@ tiny-inflate: make object! [
 
         ; check length
         ;
-        either length <> (65535 and complement inverse-length) [
-            TINF-DATA-ERROR
-        ][
+        either inverse-length xor 65535 == length [
             encoding/source: skip encoding/source 4
+
+            assert [
+                length <= length? encoding/source
+            ]
 
             ; copy block
             ;
@@ -611,9 +635,12 @@ tiny-inflate: make object! [
             ]
 
             ; make sure we start next block on a byte boundary
+            ;
             encoding/bit-count: 0
 
             TINF-OK
+        ][
+            TINF-DATA-ERROR
         ]
     ]
 
@@ -622,7 +649,9 @@ tiny-inflate: make object! [
     uncompress: func [
         source target
         /debug
-        /local encoding final-block type-block outcome
+
+        /local
+        encoding type-block is-unpacked is-last-block
     ][
         encoding: new-encoding source target
 
@@ -636,7 +665,7 @@ tiny-inflate: make object! [
         until [
             ; read final block flag
             ;
-            final-block: get-bit encoding
+            is-last-block: 1 == get-bit encoding
 
             ; read block type (2 bits)
             ;
@@ -644,27 +673,21 @@ tiny-inflate: make object! [
 
             ; decompress block
             ;
-            outcome: switch/default type-block [
+            is-unpacked: switch/default type-block [
                 0 [
-                    ; decompress uncompressed block
-                    ;
-                    ; probe 'inflate-uncompressed-block
+                    ; Decompress an uncompressed block
                     ;
                     inflate-uncompressed-block encoding
                 ]
 
                 1 [
-                    ; decompress block with fixed huffman trees
-                    ;
-                    ; probe 'inflate-fixed-block
+                    ; Decompress a block with fixed huffman trees
                     ;
                     inflate-block-data encoding static-sym-tree static-dst-tree
                 ]
 
                 2 [
                     ; decompress block with dynamic huffman trees
-                    ;
-                    ; probe 'inflate-dynamic-block
                     ;
                     decode-trees encoding encoding/sym-tree encoding/dst-tree
 
@@ -674,11 +697,20 @@ tiny-inflate: make object! [
                 TINF-DATA-ERROR
             ]
 
-            if outcome <> TINF-OK [
-                make error! "Data Error"
+            if is-unpacked <> TINF-OK [
+                make error! "DEFLATE stream integrity error"
             ]
 
-            final-block = 1
+            is-last-block
+        ]
+
+        ; reset source position
+        ;
+        while [
+            encoding/bit-count > 8
+        ][
+            encoding/source: back encoding/source
+            encoding/bit-count: encoding/bit-count - 8
         ]
 
         reduce [
@@ -751,7 +783,7 @@ inflate: func [
                     throw make error! "Inflate error"
                 ]
 
-                not find/match back back remaining adler32-checksum-of data [
+                not find/match remaining adler32-checksum-of data [
                     throw make error! "Inflate ZLIB checksum fail"
                 ]
 
@@ -780,7 +812,7 @@ inflate: func [
                     throw make error! "Inflate error"
                 ]
 
-                not find/match back back remaining reverse crc32-checksum-of data [
+                not find/match remaining reverse crc32-checksum-of data [
                     throw make error! "Inflate GZIP checksum fail"
                 ]
 
