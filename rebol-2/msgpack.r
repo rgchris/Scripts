@@ -1,10 +1,10 @@
 Rebol [
     Title: "MessagePack Encoder/Decoder for Rebol 2"
     Author: "Christopher Ross-Gill"
-    Date: 15-Feb-2022
+    Date: 18-Apr-2022
     Home: https://gist.github.com/rgchris
     File: %msgpack.r
-    Version: 0.0.2
+    Version: 0.0.3
     Rights: http://opensource.org/licenses/Apache-2.0
     Purpose: {
         (De)Serialize MessagePack content
@@ -17,6 +17,7 @@ Rebol [
     ]
 
     History: [
+        18-Apr-2022 0.0.3 "Cleaner stream branching code"
         15-Feb-2022 0.0.2 "Correct code for block! export"
         30-Jan-2022 0.0.1 "Proof of concept: streaming parser"
     ]
@@ -101,88 +102,80 @@ msgpack: make object! [
                 handler none! </end>
                 continue?: false
             ][
-                ; print enbase/base copy/part series 1 2
-
                 value: consume series 'unsigned-8
 
-                continue?: either zero? value and 128 [
-                    ; 0
+                continue?: case [
+                    ; 0 0x00-7F => Unsigned-8
                     ;
-                    handler integer! value
-                ][
-                    ; 1
+                    value < 128 [
+                        handler integer! value
+                    ]
+
+                    ; 111 0xE0-FF => Signed-8
                     ;
-                    either zero? value and 64 [
-                        ; 10
-                        ;
-                        either zero? value and 32 [
-                            ; 100
+                    value and 224 == 224 [
+                        handler integer! complement to integer! complement value
+                    ]
+
+                    ; 101 0xA0-BF => Short String
+                    ;
+                    value and 224 == 160 [
+                        get-part series string! value and 31 :handler
+                    ]
+
+                    ; 1000 0x80-8F => Short Map
+                    ;
+                    value and 240 == 128 [
+                        handler map! value and 15
+                    ]
+
+                    ; 1001 0x90-9F => Short Block
+                    ;
+                    value and 240 == 144 [
+                        handler block! value and 15
+                    ]
+
+                    ; 110 0xC0-DF => Everything Else
+                    ;
+                    <else> [
+                        switch value [
+                            ; 1100 - 0xC0-CF
                             ;
-                            either zero? value and 16 [
-                                ; 1000 0x80-8F
-                                ;
-                                handler map! value and 15
-                            ][
-                                ; 1001 0x90-9F
-                                ;
-                                handler block! value and 15
-                            ]
-                        ][
-                            ; 101 0xA0-BF
+                            192 [handler none! none]
+                            193 [handler unset! none]
+                            194 [handler logic! true]
+                            195 [handler logic! false]
+                            196 [get-part series binary! 'unsigned-8 :handler]
+                            197 [get-part series binary! 'unsigned-16 :handler]
+                            198 [get-part series binary! 'unsigned-32 :handler]
+                            199 [get-part series datatype! 'unsigned-8 :handler]  ; -1 => date
+                            200 [get-part series datatype! 'unsigned-16 :handler]
+                            201 [get-part series datatype! 'unsigned-32 :handler]
+                            202 [get-number series decimal! 'float-32 :handler]
+                            203 [get-number series decimal! 'float-64 :handler]
+                            204 [get-number series integer! 'unsigned-8 :handler]
+                            205 [get-number series integer! 'unsigned-16 :handler]
+                            206 [get-number series integer! 'unsigned-32 :handler]
+                            207 [get-number series integer! 'unsigned-64 :handler]
+
+                            ; 1101 - 0xD0-DF
                             ;
-                            get-part series string! value and 31 :handler
-                        ]
-                    ][
-                        either zero? value and 32 [
-                            ; 110 0xC0-DF
-                            ;
-                            either zero? value and 16 [
-                                ; 1100 - 0xC0-CF
-                                ;
-                                switch value [
-                                    192 [handler none! none]
-                                    193 [handler unset! none]
-                                    194 [handler logic! true]
-                                    195 [handler logic! false]
-                                    196 [get-part series binary! 'unsigned-8 :handler]
-                                    197 [get-part series binary! 'unsigned-16 :handler]
-                                    198 [get-part series binary! 'unsigned-32 :handler]
-                                    199 [get-part series datatype! 'unsigned-8 :handler]  ; -1 => date
-                                    200 [get-part series datatype! 'unsigned-16 :handler]
-                                    201 [get-part series datatype! 'unsigned-32 :handler]
-                                    202 [get-number series decimal! 'float-32 :handler]
-                                    203 [get-number series decimal! 'float-64 :handler]
-                                    204 [get-number series integer! 'unsigned-8 :handler]
-                                    205 [get-number series integer! 'unsigned-16 :handler]
-                                    206 [get-number series integer! 'unsigned-32 :handler]
-                                    207 [get-number series integer! 'unsigned-64 :handler]
-                                ]
-                            ][
-                                ; 1101 - 0xD0-DF
-                                ;
-                                switch value [
-                                    208 [get-number series integer! 'signed-8 :handler]
-                                    209 [get-number series integer! 'signed-16 :handler]
-                                    210 [get-number series integer! 'signed-32 :handler]
-                                    211 [get-number series integer! 'signed-64 :handler]
-                                    212 [get-part series datatype! 1 :handler]
-                                    213 [get-part series datatype! 2 :handler]  ; -1 => date
-                                    214 [get-part series datatype! 4 :handler]  ; -1 => date
-                                    215 [get-part series datatype! 8 :handler]
-                                    216 [get-part series datatype! 16 :handler]
-                                    217 [get-part series string! 'unsigned-8 :handler]
-                                    218 [get-part series string! 'unsigned-16 :handler]
-                                    219 [get-part series string! 'unsigned-32 :handler]
-                                    220 [get-container series block! 'unsigned-16 :handler]
-                                    221 [get-container series block! 'unsigned-32 :handler]
-                                    222 [get-container series map! 'unsigned-16 :handler]
-                                    223 [get-container series map! 'unsigned-32 :handler]
-                                ]
-                            ]
-                        ][
-                            ; 111 signed-8
-                            ;
-                            handler integer! complement to integer! complement value
+                            208 [get-number series integer! 'signed-8 :handler]
+                            209 [get-number series integer! 'signed-16 :handler]
+                            210 [get-number series integer! 'signed-32 :handler]
+                            211 [get-number series integer! 'signed-64 :handler]
+                            212 [get-part series datatype! 1 :handler]
+                            213 [get-part series datatype! 2 :handler]  ; -1 => date
+                            214 [get-part series datatype! 4 :handler]  ; -1 => date
+                            215 [get-part series datatype! 8 :handler]
+                            216 [get-part series datatype! 16 :handler]
+                            217 [get-part series string! 'unsigned-8 :handler]
+                            218 [get-part series string! 'unsigned-16 :handler]
+                            219 [get-part series string! 'unsigned-32 :handler]
+                            220 [get-container series block! 'unsigned-16 :handler]
+                            221 [get-container series block! 'unsigned-32 :handler]
+                            222 [get-container series map! 'unsigned-16 :handler]
+                            223 [get-container series map! 'unsigned-32 :handler]
                         ]
                     ]
                 ]
