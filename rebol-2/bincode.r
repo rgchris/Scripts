@@ -1,10 +1,10 @@
 Rebol [
     Title: "Bincode"
     Author: "Christopher Ross-Gill"
-    Date: 1-Feb-2022
+    Date: 19-Apr-2022
     Home: https://github.com/rgchris/Scripts
     File: %bincode.r
-    Version: 0.0.2
+    Version: 0.0.3
     Rights: http://opensource.org/licenses/Apache-2.0
     Purpose: {
         (Un)Pack primitive values from a binary source
@@ -17,6 +17,7 @@ Rebol [
     ]
 
     History: [
+        19-Apr-2022 0.0.3 "Refactoring of datatype components"
         01-Feb-2022 0.0.2 "Initial set of export types"
         22-Jan-2022 0.0.1 "Initial set of import types"
     ]
@@ -43,245 +44,283 @@ assert-all: func [
     ]
 ]
 
-as-signed-32: func [
-    value [number!]
-][
-    if decimal? value [
-        value: to integer! value
-    ]
-
-    debase/base to-hex value 16
-]
-
-load-unsigned-32: func [
-    source [binary!]
-    /le
-    /local value
-][
-    value: copy/part source 4
-
-    if le [
-        reverse value
-    ]
-
-    value: to integer! value
-
-    if negative? value [
-        value: 4294967296.0 + value
-    ]
-
-    value
-]
-
-as-unsigned-32: func [
-    [catch]
-    value [number!]
-][
-    case [
-        value < 0 [
-            throw make error! "Number overflow"
-        ]
-
-        value <= 2147483647 [
-            as-signed-32 to integer! value
-        ]
-
-        value <= 4294967295 [
-            as-signed-32 to integer! value - 4294967296
-        ]
-
-        <else> [
-            throw make error! "Number overflow"
-        ]
-    ]
-]
-
-load-signed-64: func [
-    source [binary!]
-    /le
-    /local has-sign value
-][
-    assert [
-        8 <= length? source
-    ]
-
-    source: copy/part source 8
-
-    if le [
-        reverse source
-    ]
-
-    if has-sign: not zero? source/1 and 128 [
-        source: complement source
-    ]
-
-    value:
-    add 4294967296.0 * to integer! take/part source 4
-    add 65536.0 * to integer! take/part source 2
-    to integer! source
-
-    either has-sign [
-        -1 - value
+signed-32: make object! [
+    encode: func [
+        value [number!]
     ][
+        if decimal? value [
+            value: to integer! value
+        ]
+
+        debase/base to-hex value 16
+    ]
+
+    decode: func [
+        source [binary!]
+        /le
+
+        /local value
+    ][
+        value: copy/part source 4
+
+        if le [
+            reverse value
+        ]
+
+        to integer! value
+    ]
+]
+
+unsigned-32: make object! [
+    encode: func [
+        [catch]
+        value [number!]
+    ][
+        case [
+            value < 0 [
+                throw make error! "Number overflow"
+            ]
+
+            value <= 2147483647 [
+                signed-32/encode to integer! value
+            ]
+
+            value <= 4294967295 [
+                signed-32/encode to integer! value - 4294967296
+            ]
+
+            <else> [
+                throw make error! "Number overflow"
+            ]
+        ]
+    ]
+
+    decode: func [
+        source [binary!]
+        /le
+
+        /local value
+    ][
+        value: copy/part source 4
+
+        if le [
+            reverse value
+        ]
+
+        value: to integer! value
+
+        if negative? value [
+            value: 4294967296.0 + value
+        ]
+
         value
     ]
 ]
 
-load-float-32: func [
-    source [binary!]
-    /local value part
-][
-    assert [
-        4 = length? source
-    ]
+signed-64: make object! [
+    ; need encode
 
-    value: to integer! source
+    decode: func [
+        source [binary!]
+        /le
 
-    part: reduce [
-        ; exp: 8 frac: 23
-        ; 127 = 2 ** (exp - 1) - 1
-        ; 8388608 = 2 ** frac
-        ;
-
-        ; -1 ^^ sign
-        ;
-        power -1 shift source/1 7
-
-        ; 1 + fraction
-        ;
-        add 1 value and 8388607 / 8388608
-
-        ; exp - bias
-        ;
-        subtract 255 and shift value 23 127
-    ]
-
-    case [
-        [1 -127] = next part [
-            0.0
-        ]
-
-        ; ... NaN / Inf handlers here ...
-
-        <else> [
-            part/1 * part/2 * power 2 part/3
-        ]
-    ]
-]
-
-as-float-32: func [
-    value [number!]
-    /local sign exponent fraction
-][
-    either zero? value [
-        #{00000000}
+        /local
+        has-sign value
     ][
-        sign: either negative? value [#{80}] [#{00}]
-        value: abs value
-        exponent: to integer! log-2 value
-
-        if 1 > fraction: value * power 2 negate exponent [
-            ; not clear why this adjustment is necessary,
-            ; I presume it's an issue where a decimal fraction is not
-            ; well represented in base-2
-            ;
-            ; print [<adjusted> num]
-            exponent: exponent - 1
-            fraction: value * power 2 negate exponent
+        assert [
+            8 <= length? source
         ]
 
-        assert-all [
-            2 >= fraction
-            exponent + 127 < 255
+        source: copy/part source 8
+
+        if le [
+            reverse source
         ]
 
-        fraction: as-signed-32 round fraction - 1 * 8388608
-        exponent: as-signed-32 round shift/left exponent + 127 23
-
-        sign or fraction or exponent
-    ]
-]
-
-load-float-64: func [
-    source [binary!]
-    /local value part
-][
-    assert [
-        8 = length? source
-    ]
-
-    ; Can handle the oversized precision integer as two
-    ; smaller numbers: add (val1 and 0x0fffff) val2
-    ;
-    value: consume source [
-        reduce [
-            source/1 signed-32 unsigned-32
-        ]
-    ]
-
-    part: reduce [
-        ; exp: 11 frac: uint 52 (20 + 32)
-        ; bias: 1023 = 2 ** (exp - 1) - 1
-        ; 1048576 = 2 ** frac  ; first part
-        ;
-        ; -1 ^^ sign
-        ;
-        power -1 shift value/1 7
-
-        ; 1 + fraction
-        ;
-        add 1 value/2 and 1048575 * 4294967296.0 + value/3 / power 2 52
-
-        ; exp - bias
-        ;
-        subtract 2047 and shift value/2 20 1023
-    ]
-
-    case [
-        [1 -1023] = next part [
-            0.0
+        if has-sign: not zero? source/1 and 128 [
+            source: complement source
         ]
 
-        ; ... NaN / Inf handlers here ...
+        value:
+        add 4294967296.0 * to integer! take/part source 4
+        add 65536.0 * to integer! take/part source 2
+        to integer! source
 
-        <else> [
-            part/1 * part/2 * power 2 part/3
+        either has-sign [
+            -1 - value
+        ][
+            value
         ]
     ]
 ]
 
-as-float-64: func [
-    value [number!]
-    /local sign exponent fraction
-][
-    either zero? value [
-        #{0000000000000000}
+float-32: make object! [
+    encode: func [
+        value [number!]
+
+        /local
+        sign exponent fraction
     ][
-        sign: either negative? value [#{80}] [#{00}]
-        value: abs value
-        exponent: to integer! log-2 value
+        either zero? value [
+            #{00000000}
+        ][
+            sign: either negative? value [#{80}] [#{00}]
+            value: abs value
+            exponent: to integer! log-2 value
 
-        if 1 > fraction: value * power 2 negate exponent [
-            ; not clear why this adjustment is necessary,
-            ; I presume it's an issue where a decimal fraction is not
-            ; well represented in base-2?
+            if 1 > fraction: value * power 2 negate exponent [
+                ; not clear why this adjustment is necessary,
+                ; I presume it's an issue where a decimal fraction is not
+                ; well represented in base-2
+                ;
+                ; print [<adjusted> num]
+                exponent: exponent - 1
+                fraction: value * power 2 negate exponent
+            ]
+
+            assert-all [
+                2 >= fraction
+                exponent + 127 < 255
+            ]
+
+            fraction: signed-32/encode round fraction - 1 * 8388608
+            exponent: signed-32/encode round shift/left exponent + 127 23
+
+            sign or fraction or exponent
+        ]
+    ]
+
+    decode: func [
+        source [binary!]
+
+        /local
+        value part
+    ][
+        assert [
+            4 = length? source
+        ]
+
+        value: to integer! source
+
+        part: reduce [
+            ; exp: 8 frac: 23
+            ; 127 = 2 ** (exp - 1) - 1
+            ; 8388608 = 2 ** frac
             ;
-            exponent: exponent - 1
-            fraction: value * power 2 negate exponent
+
+            ; -1 ^^ sign
+            ;
+            power -1 shift source/1 7
+
+            ; 1 + fraction
+            ;
+            add 1 value and 8388607 / 8388608
+
+            ; exp - bias
+            ;
+            subtract 255 and shift value 23 127
         ]
 
-        assert-all [
-            1 <= fraction
-            2 > fraction
-            exponent + 1023 < 2047
+        case [
+            [1 -127] = next part [
+                0.0
+            ]
+
+            ; ... NaN / Inf handlers here ...
+
+            <else> [
+                part/1 * part/2 * power 2 part/3
+            ]
+        ]
+    ]
+]
+
+float-64: make object! [
+    encode: func [
+        value [number!]
+
+        /local
+        sign exponent fraction
+    ][
+        either zero? value [
+            #{0000000000000000}
+        ][
+            sign: either negative? value [#{80}] [#{00}]
+            value: abs value
+            exponent: to integer! log-2 value
+
+            if 1 > fraction: value * power 2 negate exponent [
+                ; not clear why this adjustment is necessary,
+                ; I presume it's an issue where a decimal fraction is not
+                ; well represented in base-2?
+                ;
+                exponent: exponent - 1
+                fraction: value * power 2 negate exponent
+            ]
+
+            assert-all [
+                1 <= fraction
+                2 > fraction
+                exponent + 1023 < 2047
+            ]
+
+            fraction: fraction - 1 * power 2 52
+            exponent: signed-32/encode round shift/left exponent + 1023 20
+
+            sign or exponent or rejoin [
+                signed-32/encode to integer! fraction / 4294967296
+                unsigned-32/encode mod fraction 4294967296
+            ]
+        ]
+    ]
+
+    decode: func [
+        source [binary!]
+
+        /local
+        value part
+    ][
+        assert [
+            8 = length? source
         ]
 
-        fraction: fraction - 1 * power 2 52
-        exponent: as-signed-32 round shift/left exponent + 1023 20
+        ; Can handle the oversized precision integer as two
+        ; smaller numbers: add (val1 and 0x0fffff) val2
+        ;
+        value: consume source [
+            reduce [
+                source/1 signed-32 unsigned-32
+            ]
+        ]
 
-        sign or exponent or rejoin [
-            as-signed-32 to integer! fraction / 4294967296
-            as-unsigned-32 mod fraction 4294967296
+        part: reduce [
+            ; exp: 11 frac: uint 52 (20 + 32)
+            ; bias: 1023 = 2 ** (exp - 1) - 1
+            ; 1048576 = 2 ** frac  ; first part
+            ;
+            ; -1 ^^ sign
+            ;
+            power -1 shift value/1 7
+
+            ; 1 + fraction
+            ;
+            add 1 value/2 and 1048575 * 4294967296.0 + value/3 / power 2 52
+
+            ; exp - bias
+            ;
+            subtract 2047 and shift value/2 20 1023
+        ]
+
+        case [
+            [1 -1023] = next part [
+                0.0
+            ]
+
+            ; ... NaN / Inf handlers here ...
+
+            <else> [
+                part/1 * part/2 * power 2 part/3
+            ]
         ]
     ]
 ]
@@ -473,33 +512,32 @@ consume: func [
 
         unsigned-32 [
             advance :series 4
-            load-unsigned-32 source
+            unsigned-32/decode source
         ]
 
         unsigned-32-le [
             advance :series 4
-            load-unsigned-32/le source
+            unsigned-32/decode/le source
         ]
 
         ; does not handle NaN/INF at this point
         ;
         float-32 [
-            load-float-32 consume :series 4
+            float-32/decode consume :series 4
         ]
 
         long-long
         signed-64 [
-            load-signed-64 consume :series 8
+            signed-64/decode consume :series 8
         ]
 
         signed-64-le [
             advance :series 8
-
-            load-signed-64/le source
+            signed-64/decode/le source
         ]
 
         float-64 [
-            load-float-64 consume :series 8
+            float-64/decode consume :series 8
         ]
 
         utf-8 [
@@ -733,7 +771,7 @@ accumulate: func [
                 ]
 
                 value < 0 [
-                    value: remove remove as-signed-32 65536 - value
+                    value: remove remove signed-32/encode 65536 - value
 
                     if type = 'signed-16-le [
                         reverse value
@@ -743,7 +781,7 @@ accumulate: func [
                 ]
 
                 value < 32768 [
-                    value: remove remove as-signed-32 value
+                    value: remove remove signed-32/encode value
 
                     if type = 'signed-16-le [
                         reverse value
@@ -770,7 +808,7 @@ accumulate: func [
                 ]
 
                 value < 65536 [
-                    value: remove remove as-signed-32 value
+                    value: remove remove signed-32/encode value
 
                     if type = 'unsigned-16-le [
                         reverse value
@@ -798,7 +836,7 @@ accumulate: func [
                 ]
 
                 value <= 2147483647 [
-                    value: as-signed-32 value
+                    value: signed-32/encode value
 
                     if type = 'signed-32-le [
                         reverse value
@@ -825,7 +863,7 @@ accumulate: func [
                 ]
 
                 value < 4294967296 [
-                    value: as-unsigned-32 value
+                    value: unsigned-32/encode value
 
                     if type = 'unsigned-32-le [
                         reverse value
@@ -842,7 +880,7 @@ accumulate: func [
 
         float-32 [
             either number? value [
-                insert mark as-float-32 value
+                insert mark float-32/encode value
             ][
                 throw make error! "ACCUMULATE FLOAT-32 expected number"
             ]
@@ -856,7 +894,7 @@ accumulate: func [
 
         float-64 [
             either number? value [
-                insert mark as-float-64 value
+                insert mark float-64/encode value
             ][
                 throw make error! "ACCUMULATE FLOAT-64 expected number"
             ]
