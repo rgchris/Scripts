@@ -1,10 +1,10 @@
 Rebol [
     Title: "Deflate De/Compression"
-    Date: 4-Jan-2022
+    Date: 9-May-2022
     Author: "Christopher Ross-Gill"
     Home: http://www.ross-gill.com/
     File: %deflate.r
-    Version: 0.3.2
+    Version: 0.4.0
     Purpose: "DEFLATE de/compression including ZLIB/GZIP envelopes"
     Rights: http://opensource.org/licenses/Apache-2.0
 
@@ -16,6 +16,7 @@ Rebol [
     ]
 
     History: [
+        09-May-2022 0.4.0 "Rework bitreader; fixes bug related to current position"
         07-Apr-2022 0.3.2 "Tweaks to return correct end of compressed stream"
         04-Jan-2022 0.3.0 "Added INFLATE algorithm and wrapper"
         04-Jan-2022 0.2.0 "Added DEFLATE wrapper around COMPRESS"
@@ -23,21 +24,16 @@ Rebol [
     ]
 
     Notes: [
-        "Tiny Inflate" 'tiny-inflate
+        "Puff"
+        https://github.com/madler/zlib/tree/master/contrib/puff
+
+        "Tiny Inflate"
         https://github.com/foliojs/tiny-inflate
         https://github.com/jibsen/tinf
-        https://gist.github.com/rgchris/d3fb5f6a6ea6d27ea3817c0e697ac25d
 
         "Other"
         https://www.zlib.net/
-
-        gzip-platform [
-            ; no yellow dots
-            1 "Amiga" #{01}
-            2 "Mac" #{07}
-            3 "Windows" #{00}
-            4 "Linux/Unix" #{03}
-        ]
+        https://github.com/nodeca/pako
     ]
 ]
 
@@ -113,8 +109,8 @@ deflate: func [
     /envelope
     "Add an envelope with header plus checksum/size information"
 
-    format
-    "'zlib (adler32, no size), 'gzip (crc32, uncompressed size), 'legacy"
+    format [word!]
+    "ZLIB (adler32, no size); GZIP (crc32, uncompressed size); LEGACY"
 
     /local compressed
 ][
@@ -144,451 +140,451 @@ deflate: func [
     ]
 ]
 
-tiny-inflate: make object! [
-    TINF-OK: 0
-    TINF-DATA-ERROR: -3
+ctx-inflate: make object! [
+    OK: 0
+    DATA-ERROR: -3
+    MAXBITS: 15
+
+    ; extra bits and base tables for length and distance codes
+    ;
+    extra: [
+        length [
+            ; Extra bits for length codes 257..285
+            ;
+            bits [
+                0 0 0 0 0 0 0 0 1 1 1 1 2 2 2 2
+                3 3 3 3 4 4 4 4 5 5 5 5 0 6
+            ]
+
+            ; Size base for length codes 257..285
+            ;
+            base [
+                3 4 5 6 7 8 9 10 11 13 15 17 19 23 27 31 35
+                43 51 59 67 83 99 115 131 163 195 227 258 323
+            ]
+        ]
+
+        distance [
+            ; Extra bits for distance codes 0..29
+            ;
+            bits [
+                0 0 0 0 1 1 2 2 3 3 4 4 5 5 6 6
+                7 7 8 8 9 9 10 10 11 11
+                12 12 13 13
+            ]
+
+            ; Offset base for distance codes 0..29
+            ;
+            base [
+                1 2 3 4 5 7 9 13 17 25 33 49 65 97 129 193
+                257 385 513 769 1025 1537 2049 3073 4097 6145
+                8193 12289 16385 24577
+            ]
+        ]
+    ]
+
+    ; special ordering of code length codes
+    ; 16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15
+    ; + 1
+    ;
+    special-offsets: [
+        17 18 19 1 9 8 10 7 11 6 12 5 13 4 14 3 15 2 16
+    ]
+
+    ; used by build-tree, avoids allocations every call
+    ;
+    offsets: array/initial 15 0
+
+    ; used by decode-trees, avoids allocations every call
+    ;
+    lengths: array/initial 288 + 32 0
+
+    ; helper used to clear out fixed arrays
+    ;
+    zero-out: func [
+        block [block!]
+    ][
+        forall block [
+            change block 0
+        ]
+
+        block
+    ]
+
+    ; helper used to increment a value at OFFSET in BLOCK
+    ;
+    increment: func [
+        block [block!]
+        offset [integer!]
+    ][
+        poke block offset 1 + pick block offset
+    ]
 
     new-tree: func [] [
         reduce [
-            'table array/initial 16 0  ; table of code length counts
-            'translations array/initial 288 0  ; code -> symbol translation
+            'counts array/initial 16 0
+            ; table of code length counts
+
+            'symbols array/initial 288 0
+            ; code -> symbol translation
         ]
     ]
 
     new-encoding: func [
-        source
-        target
+        source [binary!]
+        target [binary!]
     ][
         make object! compose [
             source: (source)
-            index: 0
-            tag: 0
-            bit-count: 0
+            buffer: 0
+            offset: 0
 
             target: (target)
             length: 0
 
-            sym-tree: new-tree  ; dynamic length/symbol tree
-            dst-tree: new-tree  ; dynamic distance tree
+            dynamic-symbol: new-tree
+            dynamic-distance: new-tree
 
             debug: false
         ]
     ]
 
-    ; -- uninitialized global data (static structures) --
-    ; ---------------------------------------------------
-    ;
-    static-sym-tree: new-tree
-    static-dst-tree: new-tree
-
-    ; extra bits and base tables for length codes
-    ;
-    length-bits: array/initial 30 0
-    length-base: array/initial 30 0  ; Uint16Array
-
-    ; extra bits and base tables for distance codes
-    ;
-    distance-bits: array/initial 30 0
-    distance-base: array/initial 30 0  ; Uint16Array
-
-    ; special ordering of code length codes */
-    ;
-    code-length-code-index: [
-        16 17 18 0 8 7 9 6
-        10 5 11 4 12 3 13 2
-        14 1 15
-    ]
-
-    ; used by decode-trees, avoids allocations every call
-    ;
-    code-tree: new-tree
-    lengths: array/initial 288 + 32 0
-
-    ; -- utility functions --
-    ; -----------------------
-
-    ; build extra bits and base tables
-    ;
-    build-bits-base: func [
-        bits [block!]
-        base
-        delta [integer!]
-        start
-
-        /local sum
-    ][
-        sum: start
-
-        ; build bits table
-        ;
-        change bits array/initial delta 0
-
-        repeat offset 30 - delta [
-            poke bits offset + delta to integer! any [
-                attempt [
-                    (offset - 1) / delta
-                ]
-
-                0
-            ]
-        ]
-
-        ; build base table
-        ;
-        repeat offset 30 [
-            poke base offset sum
-            sum: sum + shift/left 1 bits/:offset
-        ]
-
-        ()
-    ]
-
-    ; build the fixed huffman trees
-    ;
-    build-fixed-trees: func [
-        sym-tree
-        dst-tree
-    ][
-        ; build fixed-length tree
-        ;
-        change sym-tree/table [
-            0 0 0 0 0 0 0 24 152 112
-        ]
-
-        repeat offset 24 [
-            poke sym-tree/translations offset 255 + offset
-        ]
-
-        repeat offset 144 [
-            poke sym-tree/translations 24 + offset offset - 1
-        ]
-
-        repeat offset 8 [
-            poke sym-tree/translations 24 + 144 + offset 279 + offset
-        ]
-
-        repeat offset 112 [
-            poke sym-tree/translations 24 + 144 + 8 + offset 143 + offset
-        ]
-
-        ; build fixed distance tree
-        ;
-        change dst-tree/table [
-            0 0 0 0 0 32
-        ]
-
-        repeat offset 32 [
-            poke dst-tree/translations offset offset - 1
-        ]
-
-        ()
-    ]
-
     ; given an array of code lengths, build a tree
     ;
-    offsets: array/initial 16 0
-
     build-tree: func [
-        tree
-        lengths
-        start [integer!]
+        tree [block!]
+        lengths [block!]
         count [integer!]
-        /local sum
+
+        /local
+        offset
     ][
         ; clear code length count table
         ;
-        change tree/table array/initial 16 0
+        zero-out tree/counts
 
         ; scan symbol lengths, and sum code length counts
         ;
-        repeat offset count [
-            poke tree/table 1 + lengths/(start + offset) 1 + tree/table/(1 + lengths/(start + offset))
+        repeat code count [
+            increment tree/counts 1 + lengths/:code
         ]
-
-        change tree/table 0
 
         ; compute offset table for distribution sort
         ;
-        sum: 0
+        offset: 1
 
-        repeat offset 16 [
-            poke offsets offset sum
-            sum: sum + pick tree/table offset
+        repeat length 15 [
+            poke offsets length offset
+            offset: offset + pick next tree/counts length
         ]
 
-        ; create code->symbol translation table (symbols sorted by code)
+        ; create code -> symbol translation table (symbols sorted by code)
         ;
-        repeat offset count [
-            if lengths/(start + offset) > 0 [
-                poke tree/translations 1 + offsets/(1 + lengths/(start + offset)) offset - 1
-                poke offsets 1 + lengths/(start + offset) 1 + offsets/(1 + lengths/(start + offset))
+        repeat code count [
+            if not zero? lengths/:code [
+                poke tree/symbols offsets/(lengths/:code) code - 1
+                increment offsets lengths/:code
             ]
         ]
 
-        ()
+        tree
     ]
 
-    ; -- decode functions --
-    ; ----------------------
-
-    ; get one bit from source stream
+    ; Trees
     ;
-    get-bit: func [
-        encoding
-
-        /local bit
-    ][
-        ; check if tag is empty
+    trees: make object! [
+        ; build fixed length huffman tree
         ;
-        if zero? encoding/bit-count [
-            ; load next tag
-            ;
-            encoding/tag: encoding/source/1
-            encoding/bit-count: 8
-            encoding/source: next encoding/source
-        ]
+        fixed-symbol: build-tree new-tree collect [
+            repeat code 288 [
+                case [
+                    code < 145 [
+                        keep 8
+                    ]
 
-        encoding/bit-count: encoding/bit-count - 1
+                    code < 257 [
+                        keep 9
+                    ]
 
-        ; shift bit out of tag
+                    code < 281 [
+                        keep 7
+                    ]
+
+                    <else> [
+                        keep 8
+                    ]
+                ]
+            ]
+        ] 288
+
+        ; build fixed distance huffman tree
         ;
-        bit: encoding/tag and 1
+        fixed-distance: build-tree new-tree array/initial 32 5 32
 
-        encoding/tag: shift/logical encoding/tag 1
-
-        bit
+        ; tree used to build dynamic tree
+        ;
+        code-lengths: new-tree
     ]
 
-    ; read a <length> bit value from a stream and add base
+    ; read a <length> bit value from a stream and add <base>
     ;
     read-bits: func [
-        encoding
-        length [integer!]
+        encoding [object!]
+        need [integer!]
         base [integer!]
 
-        /local value
+        /local
+        value
     ][
-        either zero? length [
-            base
+        value: encoding/buffer  ; bit accumulator (can use up to 20 bits)
+
+        while [
+            encoding/offset < need
         ][
-            while [
-                encoding/bit-count < 24
+            either tail? encoding/source [
+                make error! "Out of Input"  ; longjmp
             ][
-                encoding/tag: encoding/tag or shift/left any [encoding/source/1 0] encoding/bit-count
+                value: value or shift/left encoding/source/1 encoding/offset  ; load eight bits
                 encoding/source: next encoding/source
-                encoding/bit-count: encoding/bit-count + 8
+                encoding/offset: encoding/offset + 8
             ]
-
-            value: encoding/tag and shift/logical 65535 16 - length
-
-            encoding/tag: shift/logical encoding/tag length
-            encoding/bit-count: encoding/bit-count - length
-
-            value + base
         ]
+
+        ; drop need bits and update buffer, always zero to seven bits left
+        ;
+        encoding/buffer: shift value need
+        encoding/offset: encoding/offset - need
+
+        ; return need bits, zeroing the bits above that
+        ;
+        value and (
+            -1 + shift/left 1 need
+        ) + base
     ]
 
-    ; given a data stream and a tree, decode a symbol
-    ;
     decode-symbol: func [
-        encoding
-        tree
-        /local sum current length tag
-    ][
-        while [
-            encoding/bit-count < 24
-        ][
-            encoding/tag: encoding/tag or shift/left any [encoding/source/1 0] encoding/bit-count
-            encoding/source: next encoding/source
-            encoding/bit-count: encoding/bit-count + 8
-        ]
+        encoding [object!]
+        tree [block!]
 
-        sum: 0
-        current: 0
-        length: 0
-        tag: encoding/tag
+        /local
+        value sum code
+    ][
+        ; possibly faster updating ENCODING/BUFFER and /OFFSET vs. READ-BITS
+
+        sum:
+        code: 0
 
         ; get more bits while code value is above sum
         ;
-        until [
-            current: 2 * current + (tag and 1)
-            tag: shift/logical tag 1
-            length: length + 1
+        foreach count next tree/counts [
+            code: code - count + read-bits encoding 1 0
+            sum: sum + count
 
-            sum: sum + pick tree/table length + 1
-            current: current - pick tree/table length + 1
+            if code < 0 [
+                value: sum + code + 1
+                break
+            ]
 
-            current < 0
+            code: shift/left code 1
         ]
 
-        encoding/tag: tag
-        encoding/bit-count: encoding/bit-count - length
-
-        pick tree/translations sum + current + 1
+        either value [
+            tree/symbols/:value
+        ][
+            make error! "Ran out of codes"
+        ]
     ]
 
     ; given a data stream, decode dynamic trees from it
     ;
     decode-trees: func [
         encoding
-        sym-tree
-        dst-tree
 
         /local
-        lengths-count distances-count code-lengths-count
-        count length
-        code-length symbol prev
+        lengths-count distances-count code-lengths-count total-count
+        reps code-length symbol last-symbol
     ][
-        ; get 5 bits HLIT (257-286)
+        ; reset lengths
         ;
+        zero-out lengths
+
         lengths-count: read-bits encoding 5 257
+        ; get 5 bits HLIT (257-286)
 
-        ; get 5 bits HDIST (1-32)
-        ;
         distances-count: read-bits encoding 5 1
+        ; get 5 bits HDIST (1-32)
 
-        ; get 4 bits HCLEN (4-19)
-        ;
         code-lengths-count: read-bits encoding 4 4
-
-        change lengths array/initial 19 0
+        ; get 4 bits HCLEN (4-19)
 
         ; read code lengths for code length alphabet
         ;
         repeat offset code-lengths-count [
-            ; get 3 bits code length (0-7)
-            ;
             code-length: read-bits encoding 3 0
+            ; get 3 bits code length (0-7)
 
-            poke lengths code-length-code-index/:offset + 1 code-length
+            poke lengths special-offsets/:offset code-length
         ]
 
         ; build code length tree
         ;
-        build-tree code-tree lengths 0 19
+        build-tree trees/code-lengths lengths 19
 
         ; decode code lengths for the dynamic trees
         ;
-        count: 1
+        total-count: lengths-count + distances-count
+        last-symbol: 0
 
-        while [
-            count < (lengths-count + distances-count + 1)
-        ][
-            symbol: decode-symbol encoding code-tree
+        ; hackish use of REPEAT assuming OFFSET is not reset each iteration
+        ;
+        repeat offset total-count [
+            symbol: decode-symbol encoding trees/code-lengths
 
             switch/default symbol [
                 16 [
                     ; copy previous code length 3-6 times (read 2 bits)
                     ;
-                    prev: pick lengths count - 1
-                    length: read-bits encoding 2 3
+                    reps: read-bits encoding 2 3
 
-                    while [
-                        length > 0
-                    ][
-                        poke lengths count prev
-
-                        count: count + 1
-                        length: length - 1
-                    ]
+                    lengths: change/dup lengths last-symbol reps
                 ]
 
                 17 [
                     ; repeat code length 0 for 3-10 times (read 3 bits)
                     ;
-                    length: read-bits encoding 3 3
+                    reps: read-bits encoding 3 3
+                    last-symbol: 0
 
-                    while [
-                        length > 0
-                    ][
-                        poke lengths count 0
-
-                        count: count + 1
-                        length: length - 1
-                    ]
+                    lengths: change/dup lengths 0 reps
                 ]
 
                 18 [
                     ; repeat code length 0 for 11-138 times (read 7 bits)
                     ;
-                    length: read-bits encoding 7 11
+                    reps: read-bits encoding 7 11
+                    last-symbol: 0
 
-                    while [
-                        length > 0
-                    ][
-                        poke lengths count 0
-
-                        count: count + 1
-                        length: length - 1
-                    ]
+                    lengths: change/dup lengths 0 reps
                 ]
             ][
                 ; values 0-15 represent the actual code lengths
                 ;
-                poke lengths count symbol
-                count: count + 1
+                reps: 1
+                last-symbol: symbol
+
+                lengths: change lengths symbol
+            ]
+
+            offset: offset + reps - 1
+            ; REPEAT automatically increments by 1
+
+            ; sanity check--it is possible for there to be more codes than specified
+            ;
+            assert [
+                offset <= total-count
             ]
         ]
 
+        ; clear any remaining length values
+        ;
+        lengths: head zero-out lengths
+
         ; build dynamic trees
         ;
-        build-tree sym-tree lengths 0 lengths-count
-        build-tree dst-tree lengths lengths-count distances-count
+        build-tree encoding/dynamic-symbol lengths lengths-count
+        build-tree encoding/dynamic-distance skip lengths lengths-count distances-count
 
         ()
     ]
 
-    ; -- block inflate functions --
-    ; -----------------------------
-
     ; given a stream and two trees, inflate a block of data
     ;
-    inflate-block-data: func [
+    inflate-compressed-block: func [
         encoding
-        sym-tree
-        dst-tree
+        symbol-tree
+        distance-tree
 
         /local
-        symbol length distance offset
+        symbol length distance offset aperture mark
     ][
         until [
-            symbol: decode-symbol encoding sym-tree
+            symbol: decode-symbol encoding symbol-tree
 
             case [
-                symbol == 256 [
-                    TINF-OK
-                ]
-                
                 symbol < 256 [
                     append encoding/target to char! symbol
 
-                    false
+                    if encoding/debug [
+                        print [
+                            'literal mold back back tail to-hex symbol
+                        ]
+                    ]
+
+                    no
+                ]
+
+                symbol == 256 [
+                    if encoding/debug [
+                        print [
+                            'end
+                        ]
+                    ]
+
+                    OK
+                    ; yes, done
                 ]
 
                 <else> [
-                    symbol: 1 + symbol - 257
+                    assert [
+                        not empty? encoding/target
+                    ]
+
+                    symbol: symbol - 256
+                    ; - 257 + 1 for 1-based indexing
+
+                    ; fetch optional length extra bits
+                    ;
+                    length: read-bits encoding extra/length/bits/:symbol extra/length/base/:symbol
+
+                    distance: 1 + decode-symbol encoding distance-tree
                     ; + 1 for 1-based indexing
 
-                    ; possibly get more bits from length code
+                    ; fetch optional distance extra bits
                     ;
-                    length: read-bits encoding length-bits/:symbol length-base/:symbol
+                    offset: read-bits encoding extra/distance/bits/:distance extra/distance/base/:distance
 
-                    distance: 1 + decode-symbol encoding dst-tree
-                    ; + 1 for 1-based indexing
+                    if encoding/debug [
+                        print [
+                            'match 'reps length 'back offset
+                        ]
+                    ]
 
-                    ; possibly get more bits from distance code
+                    ; could offer backfill of null bytes here
                     ;
-                    offset: length? encoding/target
+                    assert [
+                        offset <= length? encoding/target
+                    ]
 
-                    offset: offset - read-bits encoding distance-bits/:distance distance-base/:distance
+                    aperture: min length offset
+
+                    ; set the decoded value at the point before the match
+                    ;
+                    mark: skip tail encoding/target negate offset
 
                     ; copy match
                     ;
-                    repeat char length [
-                        append encoding/target to char! pick encoding/target offset + char
+                    if length > aperture [
+                        insert/dup tail encoding/target copy mark to integer! length / aperture
+                        length: remainder length aperture
                     ]
 
-                    false
+                    append encoding/target copy/part mark length
+
+                    ; loop length [
+                    ;     mark: append encoding/target to char! first mark: next mark
+                    ; ]
+
+                    no
                 ]
             ]
         ]
@@ -599,15 +595,18 @@ tiny-inflate: make object! [
     inflate-uncompressed-block: func [
         encoding
 
-        /local length inverse-length
+        /local
+        length inverse-length
+
+        ; https://github.com/madler/zlib/blob/master/inflate.c#L898
     ][
         ; unread from bitbuffer
         ;
         while [
-            encoding/bit-count > 8
+            encoding/offset > 8
         ][
             encoding/source: back encoding/source
-            encoding/bit-count: encoding/bit-count - 8
+            encoding/offset: encoding/offset - 8
         ]
 
         ; get length
@@ -617,6 +616,12 @@ tiny-inflate: make object! [
         ; get one's complement of length
         ;
         inverse-length: 256 * encoding/source/4 + encoding/source/3
+
+        if encoding/debug [
+            print [
+                'uncompressed length
+            ]
+        ]
 
         ; check length
         ;
@@ -636,40 +641,53 @@ tiny-inflate: make object! [
 
             ; make sure we start next block on a byte boundary
             ;
-            encoding/bit-count: 0
+            encoding/offset: 0
 
-            TINF-OK
+            OK
         ][
-            TINF-DATA-ERROR
+            DATA-ERROR
         ]
     ]
 
     ; inflate stream from source to target
     ;
     uncompress: func [
-        source target
+        source
+        target
         /debug
 
         /local
-        encoding type-block is-unpacked is-last-block
+        encoding type-block is-unpacked is-last-block mark
     ][
         encoding: new-encoding source target
 
         if any [
             debug
-            512 > length? source
-        ] [
+            ; 512 > length? source
+        ][
             encoding/debug: true
         ]
 
         until [
+            mark: length? encoding/target
+
             ; read final block flag
             ;
-            is-last-block: 1 == get-bit encoding
+            is-last-block: 1 == read-bits encoding 1 0
 
             ; read block type (2 bits)
             ;
             type-block: read-bits encoding 2 0
+
+            if encoding/debug [
+                print [
+                    switch type-block [
+                        0 [<stored>]
+                        1 [<fixed>]
+                        2 [<dynamic>]
+                    ]
+                ]
+            ]
 
             ; decompress block
             ;
@@ -683,57 +701,58 @@ tiny-inflate: make object! [
                 1 [
                     ; Decompress a block with fixed huffman trees
                     ;
-                    inflate-block-data encoding static-sym-tree static-dst-tree
+                    inflate-compressed-block encoding trees/fixed-symbol trees/fixed-distance
                 ]
 
                 2 [
                     ; decompress block with dynamic huffman trees
                     ;
-                    decode-trees encoding encoding/sym-tree encoding/dst-tree
-
-                    inflate-block-data encoding encoding/sym-tree encoding/dst-tree
+                    decode-trees encoding
+                    inflate-compressed-block encoding encoding/dynamic-symbol encoding/dynamic-distance
                 ]
             ][
-                TINF-DATA-ERROR
+                DATA-ERROR
             ]
 
-            if is-unpacked <> TINF-OK [
+            if encoding/debug [
+                print [
+                    switch/default is-unpacked [
+                        0 ['ok]
+                        -3 ['error]
+                    ][
+                        'unknown
+                    ]
+
+                    pick [end continue] is-last-block
+
+                    'from mark
+                    'to length? encoding/target
+
+                    newline
+
+                    switch/default type-block [
+                        0 [</stored>]
+                        1 [</fixed>]
+                        2 [</dynamic>]
+                    ][
+                        'unknown
+                    ]
+
+                    newline
+                ]
+            ]
+
+            if is-unpacked <> OK [
                 make error! "DEFLATE stream integrity error"
             ]
 
             is-last-block
         ]
 
-        ; reset source position
-        ;
-        while [
-            encoding/bit-count > 8
-        ][
-            encoding/source: back encoding/source
-            encoding/bit-count: encoding/bit-count - 8
-        ]
-
         reduce [
             encoding/target encoding/source
         ]
     ]
-
-    ; -- initialization --
-    ; --------------------
-
-    ; build fixed huffman trees
-    ;
-    build-fixed-trees static-sym-tree static-dst-tree
-
-    ; build extra bits and base tables
-    ;
-    build-bits-base length-bits length-base 4 3
-    build-bits-base distance-bits distance-base 2 1
-
-    ; fix a special case
-    ;
-    length-bits/29: 0
-    length-base/29: 258
 ]
 
 inflate: func [
@@ -757,7 +776,7 @@ inflate: func [
 ][
     switch format [
         #[none] [
-            first tiny-inflate/uncompress data copy #{}
+            first ctx-inflate/uncompress data copy #{}
         ]
 
         ; wrappers
@@ -778,7 +797,7 @@ inflate: func [
 
                 error? try [
                     data: skip data pick [2 6] zero? data/2 and 32
-                    set [data remaining] tiny-inflate/uncompress data make binary! 1024
+                    set [data remaining] ctx-inflate/uncompress data make binary! 1024
                 ][
                     throw make error! "Inflate error"
                 ]
@@ -807,7 +826,7 @@ inflate: func [
                 ]
 
                 error? try [
-                    set [data remaining] tiny-inflate/uncompress data make binary! size
+                    set [data remaining] ctx-inflate/uncompress data make binary! size
                 ][
                     throw make error! "Inflate error"
                 ]
