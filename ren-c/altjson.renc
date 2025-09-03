@@ -1,141 +1,712 @@
 Rebol [
-	Title: "JSON Parser for Rebol 3"
+	Title: "JSON (De)Serializer"
 	Author: "Christopher Ross-Gill"
-	Date: 18-Sep-2015
-	Home: http://www.ross-gill.com/page/JSON_and_Rebol
-	File: %altjson.reb
+	Date: 20-Feb-2021
 	Version: 0.3.6.1
+	File: %altjson.renc
+
 	Purpose: "Convert a Rebol block to/from a JSON string"
-	Rights: http://opensource.org/licenses/Apache-2.0
+
+	Home: https://www.ross-gill.com/page/JSON_and_Rebol
+	Rights: https://opensource.org/licenses/Apache-2.0
+
 	Type: module
 	Name: rgchris.altjson
-	Exports: [load-json to-json]
-	History: [
-		25-Feb-2017 0.3.6.1 "Ren-C Compatibilities"
-		18-Sep-2015 0.3.6 "Non-Word keys loaded as strings"
-		17-Sep-2015 0.3.5 "Added GET-PATH! lookup"
-		16-Sep-2015 0.3.4 "Reinstate /FLAT refinement"
-		21-Apr-2015 0.3.3 {
-			- Merge from Reb4.me version
-			- Recognise set-word pairs as objects
-			- Use map! as the default object type
-			- Serialize dates in RFC 3339 form
-		}
-		14-Mar-2015 0.3.2 "Converts Json input to string before parsing"
-		07-Jul-2014 0.3.0 "Initial support for JSONP"
-		15-Jul-2011 0.2.6 "Flattens Flickr '_content' objects"
-		02-Dec-2010 0.2.5 "Support for time! added"
-		28-Aug-2010 0.2.4 "Encodes tag! any-type! paired blocks as an object"
-		06-Aug-2010 0.2.2 "Issue! composed of digits encoded as integers"
-		22-May-2005 0.1.0 "Original Version"
+	Exports: [
+		load-json to-json
 	]
-	Comment: {
-		- Converts date! to RFC 3339 Date String
-	}
+
+	Needs: [
+		parser
+	]
+
+	History: [
+		20-Feb-2021 0.3.6.1
+		"R3C Compatibilities"
+
+		18-Sep-2015 0.3.6
+		"Non-Word keys loaded as strings"
+
+		17-Sep-2015 0.3.5
+		"Added GET-PATH! lookup"
+
+		16-Sep-2015 0.3.4
+		"Reinstate /FLAT refinement"
+
+		21-Apr-2015 0.3.3
+		* "Merge from Reb4.me version"
+		* "Recognise set-word pairs as objects"
+		* "Use map! as the default object type"
+		* "Serialize dates in RFC 3339 form"
+
+		14-Mar-2015 0.3.2
+		"Converts Json input to string before parsing"
+
+		7-Jul-2014 0.3.0
+		"Initial support for JSONP"
+
+		15-Jul-2011 0.2.6
+		"Flattens Flickr '_content' objects"
+
+		2-Dec-2010 0.2.5
+		"Support for time! added"
+
+		28-Aug-2010 0.2.4
+		"Encodes tag! any-value! paired blocks as an object"
+
+		6-Aug-2010 0.2.2
+		"Issue! composed of digits encoded as integers"
+
+		22-May-2005 0.1.0
+		"Original Version"
+	]
+
+	Comment: [
+		https://json.org
+		"Introducing JSON"
+
+		* "Converts date! to RFC 3339 Date String"
+	]
 ]
 
-load-json: use [
+json-grammar: make object! [
+	space: charset "^-^M "
+	string-literal: complement charset {\"}
+	string-escapes: charset {"\/bfnrt}
+	hex: charset "0123456789ABCDEFabcdef"
+	digit: charset "0123456789"
+
+	exponent: [
+		[#"e" | #"E"]
+		opt [#"+" | #"-"]
+		some digit
+	]
+
+	number: [
+		opt #"-"
+		some digit
+		opt [
+			#"." some digit
+		]
+		opt exponent
+	]
+
+	ident-initial: charset [
+		"$_"
+		#"a" - #"z"
+		#"A" - #"Z"
+	]
+
+	ident: union ident-initial charset [
+		#"0" - #"9"
+	]
+
+	defaults: make map! reduce [
+		'comments no
+		; not implemented
+
+		'padded no
+		; not implemented
+	]
+
+	load-number: func [
+		value [text! binary!]
+	][
+		case [
+			not parse value [
+				opt #"-"
+				some digit end
+			][
+				to decimal! value
+			]
+
+			not integer? attempt [
+				value: to integer! value
+			][
+				to issue! value
+			]
+
+			<else> [
+				value
+			]
+		]
+	]
+
+	value: _
+
+	emit: func [
+		state [map!]
+		value [any-value!]
+	][
+		either empty? state/stack [
+			state/value: value
+			state/after-value: 'postamble
+		][
+			switch type-of state/stack/1 [
+				block! [
+					state/after-value: 'in-block
+				]
+			]
+
+			state/stack/1 = text! _
+
+			state/stack/1 = map! [
+				state/after-value: 'in-map
+			]
+
+			trestling/emit state/stack value
+		]
+	]
+
+	warn: func [
+		state [map!]
+		warning [text!]
+	][
+		append state/warnings warning
+		null
+	]
+
+	bomb: func [
+		state [map!]
+		error [text!]
+	][
+		append state/errors error
+		null
+	]
+
+	codec: parser/register 'json [
+		%.json
+	][
+		is-padded: no
+		comments: no
+	][
+		head [
+			newline
+			(state/line-count: me + 1)
+			|
+			some space
+			|
+			(use value)
+		]
+
+		key [
+			#"^""
+			(
+				push text!
+				use in-string
+			)
+		]
+
+		value [
+			newline
+			(state/line-count: me + 1)
+			|
+			some space
+			|
+			"null"
+			(
+				emit _
+				use :state/after-value
+			)
+			|
+			"true"
+			(
+				emit true
+				use :state/after-value
+			)
+			|
+			"false"
+			(
+				emit false
+				use :state/after-value
+			)
+			|
+			copy value number
+			(
+				emit load-number value
+				use :state/after-value
+			)
+			|
+			quote
+			(
+				push text!
+				use in-string
+			)
+			|
+			#"["
+			(push block!)
+			|
+			#"{"
+			(push map!)
+			(use in-object)
+			|
+			#"]"
+			(report "Unexpected array termination")
+			|
+			#"}"
+			(report "Unexpected object termination")
+			|
+			if (state/options/comments)
+			[
+				"/*"
+				(use in-comment)
+				|
+				"//"
+				(use in-comment-line)
+			]
+		]
+
+		after-array-value [
+			#","
+			(use value)
+			|
+			#"]"
+			(emit pop block!)
+			|
+			some space
+		]
+
+		after-object-key [
+			#":"
+			(use value)
+			|
+			#"}"
+			(emit _)
+			(pop map!)
+		]
+	]
+
+	codec/decode: func [
+		encoding [binary! text!]
+
+		/with
+
+		options [map!]
+
+		<local> state error
+	][
+		state: parser/init 'json encoding
+
+		; need a function that does this
+		;
+		state/options: any [
+			:options
+			make map! []
+		]
+
+		for-each option words-of defaults [
+			if not find options option [
+				poke options option defaults/:option
+			]
+		]
+
+		; start with an empty stack
+		;
+		state/stack: copy []
+
+		state/emit: func [
+			value
+		][
+			emit state value
+		]
+
+		state/push: func [
+			type [datatype!]
+		][
+			trestling/push state type
+		]
+
+		state/pop: func [
+			type [datatype!]
+		][
+			trestling/pop state type
+		]
+
+		state/warn: func [
+			warning [text! block!]
+		][
+			warning: unspaced warning
+
+			write log/info warning
+			warn state warning
+		]
+
+		state/bomb: func [
+			error [text! block!]
+		][
+			error: unspaced error
+			write log/error :error
+			bomb state error
+		]
+
+		; Engage Parse Machine
+		;
+		case [
+			error? error: trap [
+				parser/start state
+			][
+				print form-error :error
+				print "------------------------------"
+			]
+
+			not state/is-done [
+				log [
+					"Not Done:" mold neaten state/errors
+				]
+
+				probe neaten last state/stack
+
+				fail [
+					"JSON Error: "
+					index-of state/index
+					mold clean copy/part state/index 20
+				]
+			]
+
+			not empty? neaten state/errors [
+				probe 'done-with-warnings
+
+				log [
+					"Done with warnings:"
+					mold neaten state/errors
+				]
+
+				probe neaten last state/stack
+
+				fail "Multiple JSON warnings"
+			]
+
+			document = state/stack/1 [
+				neaten/pairs document
+			]
+
+			<else> [
+				neaten/pairs document
+			]
+		]
+	]
+]
+
+load-json: :json-grammar/codec/decode
+
+load-json-old: use [
 	tree branch here val is-flat emit new-child to-parent neaten word to-word
 	space comma number string block object _content value ident
 ][
-	branch: make block! 10
-
-	emit: func [val][here: insert/only here val]
-	new-child: [(insert/only branch insert/only here here: make block! 10)]
-	to-parent: [(here: take branch)]
-	neaten: [
-		(new-line/all head here true)
-		(new-line/all/skip head here true 2)
+	lookup: make map! [
+		#"^"" "^""
+		#"\" "\"
+		#"/" "/"
+		#"b" "^H"
+		#"f" "^L"
+		#"r" "^M"
+		#"n" "^/"
+		#"t" "^-"
 	]
 
-	to-word: use [word1 word+][
+	branch: make block! 10
+
+	emit: func [
+		val
+	][
+		here: insert/only here val
+	]
+
+	new-child: [
+		(insert/only branch insert/only here here: make block! 10)
+	]
+
+	to-parent: [
+		(here: take branch)
+	]
+
+	neaten: [
+		(new-line/all head here true)
+		(new-line/skip head here true 2)
+	]
+
+	to-word: use [
+		word1 word+
+	][
 		; upper ranges borrowed from AltXML
+		;
 		word1: charset [
 			"!&*=?ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz|~"
-			#"^(C0)" - #"^(D6)" #"^(D8)" - #"^(F6)" #"^(F8)" - #"^(02FF)"
-			#"^(0370)" - #"^(037D)" #"^(037F)" - #"^(1FFF)" #"^(200C)" - #"^(200D)"
-			#"^(2070)" - #"^(218F)" #"^(2C00)" - #"^(2FEF)" #"^(3001)" - #"^(D7FF)"
-			#"^(f900)" - #"^(FDCF)" #"^(FDF0)" - #"^(FFFD)"
+			#"^(C0)" - #"^(D6)"
+			#"^(D8)" - #"^(F6)"
+			#"^(F8)" - #"^(02FF)"
+			#"^(0370)" - #"^(037D)"
+			#"^(037F)" - #"^(1FFF)"
+			#"^(200C)" - #"^(200D)"
+			#"^(2070)" - #"^(218F)"
+			#"^(2C00)" - #"^(2FEF)"
+			#"^(3001)" - #"^(D7FF)"
+			#"^(F900)" - #"^(FDCF)"
+			#"^(FDF0)" - #"^(FFFC)"
 		]
 
 		word+: charset [
 			"!&'*+-.0123456789=?ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz|~"
-			#"^(B7)" #"^(C0)" - #"^(D6)" #"^(D8)" - #"^(F6)" #"^(F8)" - #"^(037D)"
-			#"^(037F)" - #"^(1FFF)" #"^(200C)" - #"^(200D)" #"^(203F)" - #"^(2040)"
-			#"^(2070)" - #"^(218F)" #"^(2C00)" - #"^(2FEF)" #"^(3001)" - #"^(D7FF)"
-			#"^(f900)" - #"^(FDCF)" #"^(FDF0)" - #"^(FFFD)"
+			#"^(B7)"
+			#"^(C0)" - #"^(D6)"
+			#"^(D8)" - #"^(F6)"
+			#"^(F8)" - #"^(037D)"
+			#"^(037F)" - #"^(1FFF)"
+			#"^(200C)" - #"^(200D)"
+			#"^(203F)" - #"^(2040)"
+			#"^(2070)" - #"^(218F)"
+			#"^(2C00)" - #"^(2FEF)"
+			#"^(3001)" - #"^(D7FF)"
+			#"^(f900)" - #"^(FDCF)"
+			#"^(FDF0)" - #"^(FFFC)"
 		]
 
-		func [val [string!]][
+		func [
+			val [text!]
+		][
 			all [
-				parse val [word1 any word+]
+				parse val [
+					word1
+					any word+
+				]
+
 				to word! val
 			]
 		]
 	]
 
-	space: use [space][
+	space: use [
+		space
+	][
 		space: charset " ^-^/^M"
+
 		[any space]
 	]
 
-	comma: [space #"," space]
-
-	number: use [dg ex nm as-num][
-		dg: charset "0123456789"
-		ex: [[#"e" | #"E"] opt [#"+" | #"-"] some dg]
-		nm: [opt #"-" some dg opt [#"." some dg] opt ex]
-
-		as-num: func [val [string!]][
-			case [
-				not parse val [opt "-" some dg][to decimal! val]
-				not integer? try [val: to integer! val][to issue! val]
-				val [val]
-			]
-		]
-
-		[copy val nm (val: as-num val)]
+	comma: [
+		space
+		#","
+		space
 	]
 
-	string: use [ch es hx mp decode][
-		ch: complement charset {\"}
-		es: charset {"\/bfnrt}
-		hx: charset "0123456789ABCDEFabcdef"
-		mp: [#"^"" "^"" #"\" "\" #"/" "/" #"b" "^H" #"f" "^L" #"r" "^M" #"n" "^/" #"t" "^-"]
+	number: use [
+		dg ex nm as-num
+	][
+		dg: charset "0123456789"
 
-		decode: use [ch mk escape][
-			escape: [
-				; should be possible to use CHANGE keyword to replace escaped characters.
-				mk: #"\" [
-					es (mk: change/part mk select mp mk/2 2)
-					|
-					#"u" copy ch 4 hx (
-						mk: change/part mk to char! to-integer/unsigned debase/base ch 16 6
-					)
-				] :mk
+		ex: [
+			[#"e" | #"E"]
+			opt [#"+" | #"-"]
+			some dg
+		]
+
+		nm: [
+			opt #"-"
+			some dg
+			opt [
+				#"."
+				some dg
 			]
+			opt ex
+		]
 
-			func [text [string! blank!]][
-				either blank? text [make string! 0][
-					all [parse text [any [to "\" escape] to end] text]
+		as-num: func [
+			val [text!]
+		][
+			case [
+				not parse val [
+					opt #"-"
+					some dg
+				][
+					to decimal! val
+				]
+
+				not integer? try [
+					val: to integer! val
+				][
+					to issue! val
+				]
+
+				val [
+					val
 				]
 			]
 		]
 
-		[#"^"" copy val [any [some ch | #"\" [#"u" 4 hx | es]]] #"^"" (val: decode val)]
+		[
+			copy val nm
+			(val: as-num val)
+		]
 	]
 
-	block: use [list][
-		list: [space opt [value any [comma value]] space]
+	string: use [
+		mark chars from here escapes hex lookup hex-to-integer decode-surrogate part pair-high pair-low rule
+	][
+		chars: complement charset {\"}
+		escapes: charset {"\/bfnrt}
+		hex: charset "0123456789ABCDEFabcdef"
 
-		[#"[" new-child list #"]" neaten/1 to-parent]
+		lookup: make map! [
+			#"^"" "^""
+			#"\" "\"
+			#"/" "/"
+			#"b" "^H"
+			#"f" "^L"
+			#"r" "^M"
+			#"n" "^/"
+			#"t" "^-"
+		]
+
+		part:
+		pair-high:
+		pair-low: _
+
+		hex-to-integer: func [
+			part [text!]
+		][
+			to-integer/unsigned debase/base part 16
+		]
+
+		decode-surrogate: func [
+			high [text!]
+			low [text!]
+		][
+			to-char 65536
+			+ (shift 1023 and+ hex-to-integer high 10)
+			+ (1023 and+ hex-to-integer low)
+		]
+
+		decode: use [
+			ch mk escape
+		][
+			escape: [
+				; should be possible to use CHANGE keyword to replace escaped characters.
+				mk:
+				#"\"
+				[
+					es
+					(mk: change/part mk select mp mk/2 2)
+					|
+					#"u"
+					copy ch 4 hx
+					(mk: change/part mk to char! to-integer/unsigned debase/base ch 16 6)
+				]
+				:mk
+			]
+
+			func [
+				text [text! blank!]
+			][
+				either blank? text [
+					make text! 0
+				][
+					all [
+						parse text [
+							any [
+								to #"\"
+								escape
+							]
+							to end
+						]
+
+						text
+					]
+				]
+			]
+		]
+
+		rule: [
+			mark:
+			some chars
+			here:
+			(append/part val mark here)
+			|
+			#"\" [
+				escapes
+				(append val select lookup mark/2)
+				|
+				#"u"
+				copy pair-high
+				[
+					#"d" [
+						#"8" | #"9" | #"a" | #"b"
+					]
+
+					2 hex
+				]
+				"\u"
+				copy pair-low [
+					#"d" [
+						#"c" | #"d" | #"e" | #"f"
+					]
+
+					2 hex
+				]
+				(append val decode-surrogate pair-high pair-low)
+				|
+				#"u"
+				copy part 4 hex
+				(append val to char! hex-to-integer part)
+			]
+		]
+
+		[
+			#"^""
+			(val: make text! 1024)
+			any [
+				from: rule
+			]
+			#"^""
+		]
 	]
 
-	_content: [#"{" space {"_content"} space #":" space value space "}"] ; Flickr
+	block: use [
+		list
+	][
+		list: [
+			space
+			opt [
+				value
+				any [
+					comma
+					value
+				]
+			]
+			space
+		]
 
-	object: use [name list as-map][
+		[
+			#"["
+			new-child
+			list
+			#"]"
+			neaten/1
+			to-parent
+		]
+	]
+
+	_content: [
+		#"{"
+		space
+		{"_content"}
+		space
+		#":"
+		space
+		value
+		space
+		"}"
+	]
+	; Flickr
+
+	object: use [
+		name list as-map
+	][
 		name: [
-			string space #":" space (
+			string
+			space
+			#":"
+			space
+			(
 				emit either is-flat [
 					to tag! val
 				][
@@ -146,51 +717,135 @@ load-json: use [
 				]
 			)
 		]
-		list: [space opt [name value any [comma name value]] space]
-		as-map: [(unless is-flat [here: change back here make map! pick back here 1])]
 
-		[#"{" new-child list #"}" neaten/2 to-parent as-map]
+		list: [
+			space
+			opt [
+				name
+				value
+				any [
+					comma
+					name
+					value
+				]
+			]
+			space
+		]
+
+		as-map: [
+			(
+				if not is-flat [
+					here: change back here make map! pick back here 1
+				]
+			)
+		]
+
+		[
+			#"{"
+			new-child
+			list
+			#"}"
+			neaten/2
+			to-parent
+			as-map
+		]
 	]
 
-	ident: use [initial ident][
-		initial: charset ["$_" #"a" - #"z" #"A" - #"Z"]
-		ident: union initial charset [#"0" - #"9"]
+	ident: use [
+		initial ident
+	][
+		initial: charset [
+			"$_"
+			#"a" - #"z"
+			#"A" - #"Z"
+		]
 
-		[initial any ident]
+		ident: union initial charset [
+			#"0" - #"9"
+		]
+
+		[
+			initial
+			any ident
+		]
 	]
 
 	value: [
-		  "null" (emit _)
-		| "true" (emit true)
-		| "false" (emit false)
-		| number (emit val)
-		| string (emit val)
-		| _content
-		| object | block
+		"null"
+		(emit _)
+		|
+		"true"
+		(emit true)
+		|
+		"false"
+		(emit false)
+		|
+		number
+		(emit val)
+		|
+		string
+		(emit val)
+		|
+		_content
+		|
+		object
+		|
+		block
 	]
 
 	func [
 		"Convert a JSON string to Rebol data"
-		json [string! binary! file! url!] "JSON string"
-		/flat "Objects are imported as tag-value pairs"
-		/padded "Loads JSON data wrapped in a JSONP envelope"
+
+		json [text! binary! file! url!]
+		"JSON string"
+
+		/flat
+		"Objects are imported as tag-value pairs"
+
+		/padded
+		"Loads JSON data wrapped in a JSONP envelope"
 	][
 		case/all [
-			any [file? json url? json][
-				if error? json: try [read/string (json)][
+			any [
+				file? json
+				url? json
+			][
+				if error? json: try [
+					read/string (json)
+				][
 					do :json
 				]
 			]
-			binary? json [json: to string! json]
+
+			binary? json [
+				json: to text! json
+			]
 		]
 
 		is-flat: :flat
-		tree: here: make block! 0
+
+		tree:
+		here: make block! 0
 
 		either parse json either padded [
-			[space ident space "(" space opt value space ")" opt ";" space]
+			[
+				space
+				ident
+				space
+				#"("
+				space
+				opt value
+				space
+				#")"
+				opt #";"
+				space
+			]
 		][
-			[space opt value space]
+			[
+				space
+				opt value
+				space
+			]
 		][
 			pick tree 1
 		][
@@ -203,54 +858,132 @@ to-json: use [
 	json emit emits escape emit-issue emit-date
 	here lookup comma block object block-of-pairs value
 ][
-	emit: func [data][repend json data]
-	emits: func [data][emit {"} emit data emit {"}]
+	emit: func [
+		data
+	][
+		repend json data
+	]
 
-	escape: use [mp ch encode][
-		mp: [#"^/" "\n" #"^M" "\r" #"^-" "\t" #"^"" "\^"" #"\" "\\" #"/" "\/"]
-		ch: intersect ch: charset [#" " - #"~"] difference ch charset extract mp 2
+	emits: func [
+		data
+	][
+		emit #"^""
+		emit data
+		emit #"^""
+	]
 
-		encode: func [here][
+	escape: use [
+		mp ch encode
+	][
+		mp: [
+			#"^/" "\n"
+			#"^M" "\r"
+			#"^-" "\t"
+			#"^"" "\^""
+			#"\" "\\"
+			#"/" "\/"
+		]
+
+		ch: intersect ch: charset [
+			#" " - #"~"
+		] difference ch charset extract mp 2
+
+		encode: func [
+			here
+		][
 			change/part here any [
 				select mp here/1
-				rejoin ["\u" skip tail form to-hex to integer! here/1 -4]
+
+				rejoin [
+					"\u"
+					skip tail form to-hex to integer! here/1 -4
+				]
 			] 1
 		]
 
-		func [txt][
+		func [txt] [
 			parse txt [any [txt: some ch | skip (txt: encode txt) :txt]]
 			head txt
 		]
 	]
 
-	emit-issue: use [dg nm mk][
+	emit-issue: use [dg nm mk] [
 		dg: charset "0123456789"
-		nm: [opt "-" some dg]
 
-		[(either parse next form here/1 [copy mk nm][emit mk][emits here/1])]
+		nm: [
+			opt #"-"
+			some dg
+		]
+
+		[
+			(
+				either parse next form here/1 [
+					copy mk nm
+				][
+					emit mk
+				][
+					emits here/1
+				]
+			)
+		]
 	]
 
-	emit-date: use [pad second][
-		pad: func [part length][part: to string! part head insert/dup part "0" length - length? part]
+	emit-date: use [
+		pad second
+	][
+		pad: func [
+			part length
+		][
+			part: to text! part
+
+			head insert/dup part "0" length - length? part
+		]
 
 		quote (
 			emits rejoin collect [
-				keep reduce [pad here/1/year 4 "-" pad here/1/month 2 "-" pad here/1/day 2]
+				keep reduce [
+					pad here/1/year 4
+					#"-"
+					pad here/1/month 2
+					#"-"
+					pad here/1/day 2
+				]
+
 				if here/1/time [
-					keep reduce ["T" pad here/1/hour 2 ":" pad here/1/minute 2 ":"]
+					keep reduce [
+						#"T"
+						pad here/1/hour 2
+						#":"
+						pad here/1/minute 2
+						#":"
+					]
+
 					keep either integer? here/1/second [
 						pad here/1/second 2
 					][
-						second: split to string! here/1/second "."
-						reduce [pad second/1 2 "." second/2]
+						second: split to text! here/1/second #"."
+
+						reduce [
+							pad second/1 2 #"." second/2
+						]
 					]
+
 					keep either any [
 						blank? here/1/zone
 						zero? here/1/zone
-					]["Z"][
+					][
+						#"Z"
+					][
 						reduce [
-							either here/1/zone/hour < 0 ["-"]["+"]
-							pad abs here/1/zone/hour 2 ":" pad here/1/zone/minute 2
+							either here/1/zone/hour < 0 [
+								#"-"
+							][
+								#"+"
+							]
+
+							pad abs here/1/zone/hour 2
+							#":"
+							pad here/1/zone/minute 2
 						]
 					]
 				]
@@ -259,53 +992,118 @@ to-json: use [
 	]
 
 	lookup: [
-		here: [get-word! | get-path!]
-		(change here reduce reduce [here/1])
+		here:
+		[get-word! | get-path!]
+		(
+			change here reduce/try reduce [
+				here/1
+			]
+		)
 		fail
 	]
 
-	comma: [(if not tail? here [emit ","])]
+	comma: [
+		(
+			if not tail? here [
+				emit #","
+			]
+		)
+	]
 
 	block: [
-		(emit "[") any [here: value here: comma] (emit "]")
+		(emit #"[")
+		any [
+			here:
+			value
+			here:
+			comma
+		]
+		(emit #"]")
 	]
 
 	block-of-pairs: [
-		  some [set-word! skip]
-		| some [tag! skip]
+		some [set-word! skip]
+		|
+		some [tag! skip]
 	]
 
 	object: [
 		(emit "{")
 		any [
-			here: [set-word! (change here to word! here/1) | any-string! | any-word!]
-			(emit [{"} escape to string! here/1 {":}])
-			here: value here: comma
+			here:
+			[
+				set-word!
+				(change here to word! here/1)
+				|
+				any-string!
+				|
+				any-word!
+			]
+			(
+				emit [
+					{"} escape to text! here/1 {":}
+				]
+			)
+			here:
+			value
+			here:
+			comma
 		]
 		(emit "}")
 	]
 
 	value: [
-		  lookup ; resolve a GET-WORD! reference
-		| number! (emit here/1)
-		| [logic! | 'true | 'false] (emit to string! here/1)
-		| [blank! | 'none | 'blank] (emit quote 'null)
-		| date! emit-date
-		| issue! emit-issue
-		| [
-			any-string! | word! | lit-word! | tuple! | pair! | money! | time!
-		] (emits escape form here/1)
-		| any-word! (emits escape form to word! here/1)
+		lookup
+		; resolve a GET-WORD! reference
+		|
+		any-number! (emit here/1)
+		|
+		[logic! | 'true | 'false]
+		(emit to text! here/1)
+		|
+		[blank! | 'none | 'blank]
+		(emit quote 'null)
+		|
+		date! emit-date
+		|
+		issue! emit-issue
+		|
+		[any-string! | word! | lit-word! | tuple! | pair! | money! | time!]
+		(emits escape form here/1)
+		|
+		any-word!
+		(emits escape form to word! here/1)
 
-		| [object! | map!] :here (change/only here body-of first here) into object
-		| into block-of-pairs :here (change/only here copy first here) into object
-		| any-block! :here (change/only here copy first here) into block
-
-		| any-type! (emits to tag! type-of first here)
+		|
+		[object! | map!]
+		:here
+		(change/only here body-of first here)
+		into object
+		|
+		into block-of-pairs
+		:here
+		(change/only here copy first here)
+		into object
+		|
+		any-array!
+		:here
+		(change/only here copy first here)
+		into block
+		|
+		any-value!
+		(emits to tag! type-of first here)
 	]
 
-	func [data][
-		json: make string! 1024
-		if parse compose/only [(data)][here: value][json]
+	func [
+		data
+	][
+		json: make text! 1024
+		if parse compose/only [
+			(data)
+		][
+			here: value
+		][
+			json
+		]
 	]
 ]

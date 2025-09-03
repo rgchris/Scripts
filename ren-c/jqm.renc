@@ -1,0 +1,156 @@
+Rebol [
+    Title: "jQuery Mobile Page Builder"
+    Author: "Christopher Ross-Gill"
+    Date: 30-Dec-2017
+    Version: 0.1.0
+    File: %jqm.renc
+
+    Purpose: "Build JQuery Mobile pages for web apps."
+
+	Home: https://github.com/rgchris/Scripts
+	Rights: https://opensource.org/licenses/Apache-2.0
+
+    Type: module
+    Name: rgchris.jqm
+    Exports: [
+        build-jqm
+    ]
+
+    Needs: [
+        %../r3c/rsp.reb
+    ]
+]
+
+no-content: ""
+
+section-builder: func [
+    proto [block!]
+    body [block!]
+    return: [action!]
+][
+    func [
+        params [block! blank!]
+        content [text! block!]
+        <local> yield
+    ] compose/only [
+        params: make (make object! proto) any [
+            :params []
+        ]
+
+        yield: delimit newline compose [
+            (content)
+        ]
+
+        unspaced bind (body) params
+        ; newline
+    ]
+]
+
+app: section-builder [
+    title: "My App"
+    style: _
+][
+    <!DOCTYPE html> 
+    | <html>
+        | <head>
+            | <meta charset="utf-8">
+            | <title> :title </title>
+            | <link rel="stylesheet" href="//code.jquery.com/mobile/1.4.5/jquery.mobile-1.4.5.min.css" />
+            | <script src="//code.jquery.com/jquery-1.11.1.min.js"> </script>
+            | <script src="//code.jquery.com/mobile/1.4.5/jquery.mobile-1.4.5.min.js"> </script>
+            if style [
+                for-each value compose [(style)] [
+                    switch type-of style [
+                        file! url! [
+                            unspaced [
+                                | build-tag compose [
+                                    link href (style) rel "stylesheet" type "text/css"
+                                ]
+                            ]
+                        ]
+                        text! [
+                            unspaced [
+                                | <style type="text/css">
+                                | sanitize trim/auto copy style
+                                | </style>
+                            ]
+                        ]
+                        (no-content)
+                    ]
+                ]
+            ]
+        | </head> 
+        | <body>
+        | yield
+        | </body>
+    | </html>
+]
+
+h4: section-builder [
+    id:
+    style: _
+][
+    | build-tag [
+        h4
+        id :id
+        style (
+            if style [
+                trim/lines copy :style
+            ]
+        )
+    ] yield </h4>
+]
+
+page: section-builder [
+    title: "Page Title"
+    footer: []
+    id:
+    class:
+    style:
+    back: _
+][
+    | build-tag [
+        div
+        data-role "page"
+        id :id
+        style (
+            if style [
+                trim/lines copy :style
+            ]
+        )
+    ]
+        | <div data-role="header">
+            | <h1> :title </h1>
+            unspaced collect [
+                keep []
+
+                if back [
+                    keep '|
+                    keep build-tag [
+                        a
+                        data-rel "back"
+                        href (
+                            mold form back
+                        )
+                    ]
+                    keep [
+                        "Back" </a>
+                    ]
+                ]
+            ]
+        | </div>
+        | <div role="main" class="ui-content">
+            yield
+        | </div>
+        | <div data-role="footer" data-position="fixed">
+            footer
+        | </div>
+    | </div>
+]
+
+build-jqm: func [
+    params [block!]
+    content [block!]
+][
+    app bind params 'app bind content 'app
+]

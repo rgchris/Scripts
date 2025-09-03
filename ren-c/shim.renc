@@ -1,0 +1,35 @@
+Rebol [
+    Title: "Ren-C Shim"
+    Author: "Christopher Ross-Gill"
+    Date: 11-Dec-2018
+]
+
+for-each [word value] [
+    function! action!
+    ; late-2018 Ren-C uses ACTION! in place of FUNCTION!
+
+    string! text!
+    ; late-2018 Ren-C uses TEXT! in place of STRING!
+
+    text! string!
+    ; early-2018 Ren-C uses STRING!
+
+    series! any-series!
+    ; late-2018 Ren-C uses ANY-SERIES! in place of SERIES!
+
+    any-series! series!
+    ; early-2018 Ren-C uses SERIES!
+
+    foreach for-each
+    ; late-2018 mandates FOR-EACH
+
+    any-type! any-value!
+    ; late-2018 mandates ANY-VALUE!
+
+    eval reduce
+    ; late-2018 REDUCE does not REDUCE GROUP! values
+][
+    if not in system/contexts/lib word [
+        extend system/contexts/lib word get value
+    ]
+]
