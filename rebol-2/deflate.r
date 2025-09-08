@@ -1,8 +1,8 @@
 Rebol [
     Title: "Deflate De/Compression"
     Author: "Christopher Ross-Gill"
-    Date: 9-May-2022
-    Version: 0.4.0
+    Date: 1-Jul-2025
+    Version: 0.5.0
     File: %deflate.r
 
     Purpose: "Deflate de/compression (including ZLIB/GZIP envelopes)"
@@ -472,22 +472,22 @@ flate: context private [
 
     decoders: context [
         prototype: [
-            source: _
-            state: _
-            buffer: _
-            value: _
-            symbols: _
-            distances: _
-            dynamic-symbols: _
-            dynamic-distances: _
+            source:
+            state:
+            buffer:
+            value:
+            symbols:
+            distances:
+            dynamic-symbols:
+            dynamic-distances: none
             stored: 0
             offset: 0
             need: 0
-            length: _
-            distance: _
-            error: _
+            length:
+            distance:
+            error: none
             window: 32768
-            last?: #[false]
+            last?: no
         ]
 
         new: func [
