@@ -854,6 +854,21 @@ if native? :do [
         ]
     ]
 
+    ; combination of COLLECT and WHILE
+    ;
+    collect-while: func [
+        {
+        While a condition block is TRUE, evaluates another block storing values via
+        KEEP function, and returns block of collected values.
+        }
+        condition [block!]
+        body [block!]
+    ][
+        collect reduce [
+            :while :condition :body
+        ]
+    ]
+
     ; combination of COLLECT and FOREACH
     ;
     collect-each: func [
