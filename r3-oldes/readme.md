@@ -15,7 +15,7 @@ There is more than one way to install these modules, here are two suggestions:
 
 Once the folder is in place, the module system can be added to `%user.reb` either by adding `Needs: [%modules/rgchris/core.reb]` to the header, or `import %modules/rgchris/core.reb` within the body. This enables the `r3:...` scheme which binds all other modules within this folder.
 
-*`%user.reb` is an optional script contained within the `REBOL_HOME` folder. For more detail on how `REBOL_HOME` is defined, see [this discussion](https://github.com/Oldes/Rebol3/discussions/131).*
+*`%user.reb` is an optional script contained within the `REBOL_HOME` folder. For more detail on how `REBOL_HOME` is determined, see [this discussion](https://github.com/Oldes/Rebol3/discussions/131).*
 
 # Usage
 
@@ -32,7 +32,7 @@ Once the core module has been invoked, all other modules can be added using the 
 
 # Style Guide
 
-Scripts in this folder adhere as close as possible to the 'Plan +4' model. Values are separated by one space or new lines, except containers where spaces can be omitted after an opening character and before a closing character (e.g. `one [(two)] three`), and between two blocks where the closing character and opening character of the two blocks appear on the same line by themselves. 'Rebol' uses initial capitals, as do the set-words in headers. Much effort has been made to limit the number of evaluative operations per line, preferably to one.
+Scripts in this folder adhere as close as possible to the 'Plan +4' model: Values are separated by one space or new lines, except containers where spaces can be omitted after an opening character and before a closing character (e.g. `one [(two)] three`), and between two blocks where the closing character and opening character of the two blocks appear on the same line by themselves. Full words are used, not abbreviations. 'Rebol' uses initial capitals, as do the set-words in headers. Much effort has been made to limit the number of evaluative operations per line, preferably to one (also for PARSE directives).
 
 The module `r3:rgchris:clean-script` can aid in adopting this style (in most cases, it is a non-destructive code formatter), however please refer to ['More than Just Code—A Deep Lake'](https://www.rebol.com/article/0103.html) for limitations on any automatic code formatting.
 
@@ -42,15 +42,143 @@ The modules contained within this folder are intended to be self-contained with 
 
 ## `r3:rgchris:core`
 
-Adds the `r3:...` system module resources scheme
+Contains functions useful across this folder's modules.
+
+* **NEATEN**
+
+  A shorthand wrapper for NEW-LINE. Has various methods for common operations:
+
+  ```rebol
+  neaten [one two three]
+
+  => [
+      one
+      two
+      three
+  ]
+  ```
+
+  ```rebol
+  neaten/flat [
+      one
+      two
+      three
+  ]
+
+  => [one two three]
+  ```
+
+  ```rebol
+  neaten/pipes [
+      one two | three four
+  ]
+
+  => [
+      one two
+      |
+      three four
+  ]
+  ```
+
+* **AMASS**
+
+  Creates a MAP! containing words and their associated value:
+
+  ```rebol
+  amass [zero pi newline]
+
+  => #[
+      zero: 0
+      pi: 3.14159265358979
+      newline: #"^/"
+  ]
+  ```
+
+* **COLLECT-EACH**
+
+  A shorthand wrapper for COLLECT and FOREACH:
+
+  ```rebol
+  collect-each month system/locale/months [
+      if #"J" == month/1 [
+          keep month
+      ]
+  ]
+
+  => ["January" "June" "July"]
+  ```
+
+* **COLLECT-WHILE**
+
+  A shorthand wrapper for COLLECT and WHILE:
+
+  ```rebol
+  number: 0
+
+  collect-while [
+      number < 5
+  ][
+      keep number: number + 1
+  ]
+
+  => [1 2 3 4 5]
+  ```
+
+* **FLATTEN**
+
+  De-nest values from a block containing blocks:
+
+  ```rebol
+  flatten [one [two [three]]]
+
+  => [one two three]
+  ```
+
+* **FOLD**
+
+  Apply a function to block of values:
+
+  ```rebol
+  fold [1 2 3 4] :add
+
+  => 10
+  ```
+
+  ```rebol
+  fold/initial [1 2 3 4] :add 100.0 
+
+  => 110.0
+  ```
+
+* **PRIVATE**
+
+  Binds a block to a private context:
+
+  ```rebol
+  reduce private [one: 1] [one]
+
+  => [1]
+  ```
+
+* **R3 Module Resources Scheme**
+
+  This is a scheme designed to offer access to modules and their associated files. In this iteratation, it is loosely mapped to filenames within the `$REBOL_HOME/modules/` folder (this may change):
+
+  ```rebol
+  import r3:rgchris:html
+  read r3:rgchris:readme.txt
+  ```
+
+  Additionally, it offers an unambiguous access to system modules heretofore accessed by word:
+
+  ```rebol
+  Needs: [r3:xml]
+  import r3:xml
+  ```
 
 ## `r3:rgchris:altxml`
 
-```
-import r3:rgchris:altxml
-```
-
-Legacy XML handler (from Rebol 2).
+Legacy XML handler (from Rebol 2). Use of this module directly is not recommended.
 
 ## `r3:rgchris:ascii85`
 
