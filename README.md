@@ -15,4 +15,4 @@ Maintenance of this collection is a personal undertaking and while I strive to m
 
 Me on [Twitter](https://twitter.com/rgrebol).
 
-![RebIT!](assets/reb-it@2x.jpg)
+![RebIT!](assets/reb-it.jpg)
