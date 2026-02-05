@@ -217,7 +217,7 @@ svg: make object! [
                 ]
             ][
                 switch unit [
-                    #(none) "" "px" [
+                    _ "" "px" [
                         numbers/decode value
                     ]
 
@@ -2232,7 +2232,7 @@ svg: make object! [
                     value: to word! value
 
                     if not tuple? select named value [
-                        value: #(none)
+                        value: _
                     ]
                 )
                 |
@@ -2945,33 +2945,33 @@ svg: make object! [
 
     creator: make object! [
         presentation-attributes: #[
-            fill #(none)
-            stroke #(none)
-            id #(none)
-            class #(none)
-            stop-color #(none)
-            rotate #(none)
-            scale #(none)
-            stroke-width #(none)
-            stroke-miterlimit #(none)
-            fill-rule #(none)
-            clip-rule #(none)
-            stroke-dasharray #(none)
-            stroke-linecap #(none)
-            stroke-linejoin #(none)
-            font-size #(none)
-            font-family #(none)
-            font-style #(none)
-            font-weight #(none)
-            text-anchor #(none)
-            transform #(none)
-            href #(none)
-            cursor #(none)
-            display #(none)
-            visible #(none)
-            opacity #(none)
-            stroke-opacity #(none)
-            fill-opacity #(none)
+            fill _
+            stroke _
+            id _
+            class _
+            stop-color _
+            rotate _
+            scale _
+            stroke-width _
+            stroke-miterlimit _
+            fill-rule _
+            clip-rule _
+            stroke-dasharray _
+            stroke-linecap _
+            stroke-linejoin _
+            font-size _
+            font-family _
+            font-style _
+            font-weight _
+            text-anchor _
+            transform _
+            href _
+            cursor _
+            display _
+            visible _
+            opacity _
+            stroke-opacity _
+            fill-opacity _
         ]
 
         do-attributes: func [
@@ -3165,7 +3165,6 @@ svg: make object! [
             ]
 
             add-line: func [
-                [catch]
                 path [block!]
                 offset [map!]
                 target [pair!]
@@ -3195,7 +3194,6 @@ svg: make object! [
             ]
 
             add-hline: func [
-                [catch]
                 path [block!]
                 offset [map!]
                 target [number!]
@@ -3223,7 +3221,6 @@ svg: make object! [
             ]
 
             add-vline: func [
-                [catch]
                 path [block!]
                 offset [map!]
                 target [number!]
@@ -3250,7 +3247,6 @@ svg: make object! [
             ]
 
             add-arc: func [
-                [catch]
                 path [block!]
                 offset [map!]
                 radius [pair!]
@@ -3281,7 +3277,6 @@ svg: make object! [
             ]
 
             add-curve: func [
-                [catch]
                 path [block!]
                 offset [map!]
                 control-1 [pair!]
@@ -3316,7 +3311,6 @@ svg: make object! [
             ]
 
             add-curv: func [
-                [catch]
                 path [block!]
                 offset [map!]
                 control [pair!]
@@ -3347,7 +3341,6 @@ svg: make object! [
             ]
 
             add-qcurve: func [
-                [catch]
                 path [block!]
                 offset [map!]
                 control [pair!]
@@ -3378,7 +3371,6 @@ svg: make object! [
             ]
 
             add-qcurv: func [
-                [catch]
                 path [block!]
                 offset [map!]
                 target [pair!]
