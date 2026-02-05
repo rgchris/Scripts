@@ -1,8 +1,8 @@
 Rebol [
     Title: "SVG Tools"
     Author: "Christopher Ross-Gill"
-    Date: 24-Aug-2022
-    Version: 0.4.0
+    Date: 5-Feb-2026
+    Version: 0.4.1
     File: %svg.reb
 
     Purpose: {
@@ -27,6 +27,9 @@ Rebol [
     ]
 
     History: [
+        0.4.1 5-Feb-2026
+        "Added LINEAR-GRADIENT, RADIAL GRADIENT; cleaned up ANIMATE"
+
         0.4.0 24-Aug-2022
         "Separation of microformats"
 
@@ -187,8 +190,8 @@ svg: make object! [
                 value: encoded
             ]
 
-            switch type-of/word value [
-                decimal! [
+            switch type-of value [
+                #(decimal!) [
                     value
                     ; ; default rounding is bad, it has a destructive
                     ; ; influence on relative path values
@@ -196,7 +199,7 @@ svg: make object! [
                     ; round/to value 0.001
                 ]
 
-                integer! [
+                #(integer!) [
                     value
                 ]
             ]
@@ -241,12 +244,12 @@ svg: make object! [
                 value: round/to value scale
             ]
 
-            switch type-of/word value [
-                integer! percent! [
+            switch type-of value [
+                #(integer!) #(percent!) [
                     form value
                 ]
 
-                decimal! [
+                #(decimal!) [
                     value: form value
 
                     case [
@@ -442,6 +445,8 @@ svg: make object! [
             (params: elliptical-arc-sequence)
         ]
 
+        ; Safe to delete?
+        ;
         #[
             svg-path: [
                 any space*
@@ -1847,14 +1852,14 @@ svg: make object! [
             emit: func [values] [
                 append out collect [
                     foreach value reduce values [
-                        switch type-of/word value [
-                            char! [
+                        switch type-of value [
+                            #(char!) [
                                 keep value
 
                                 last: 'word
                             ]
 
-                            logic! [
+                            #(logic!) [
                                 if find [integer decimal] last [
                                     keep #" "
                                 ]
@@ -1864,7 +1869,7 @@ svg: make object! [
                                 last: 'logic
                             ]
 
-                            word! [
+                            #(word!) [
                                 value: value = 'true
 
                                 if find [integer decimal] last [
@@ -1876,11 +1881,11 @@ svg: make object! [
                                 last: 'logic
                             ]
 
-                            decimal! integer! [
+                            #(decimal!) #(integer!) [
                                 keep prep value
                             ]
 
-                            pair! [
+                            #(pair!) [
                                 keep prep value/x
                                 keep prep value/y
                             ]
@@ -2317,13 +2322,13 @@ svg: make object! [
             case [
                 3 = length-of value [
                     rejoin [
-                        "rgb(" value/1 #"," value/2 #"," value/3 ")"
+                        "rgb(" value/1 #"," value/2 #"," value/3 #")"
                     ]
                 ]
 
                 4 = length-of value [
                     rejoin [
-                        "rgba(" value/1 #"," value/2 #"," value/3 #"," numbers/encode value/4 / 256 ")"
+                        "rgba(" value/1 #"," value/2 #"," value/3 #"," numbers/encode value/4 / 256 #")"
                     ]
                 ]
             ]
@@ -2341,13 +2346,13 @@ svg: make object! [
             matrix [block!]
         ][
             point: collect [
-                switch type-of/word point [
-                    pair! [
+                switch type-of point [
+                    #(pair!) [
                         keep to decimal! point/x
                         keep to decimal! point/y
                     ]
 
-                    block! [
+                    #(block!) [
                         parse point [
                             2 [
                                 point: [
@@ -2839,14 +2844,14 @@ svg: make object! [
                     ][
                         kid: kids/1
 
-                        switch/default type-of/word kid/name [
-                            tag! [
+                        switch/default type-of kid/name [
+                            #(tag!) [
                                 insert open-tags kid/name
                                 keep handle-kid kid
                                 remove open-tags
                             ]
 
-                            file! [
+                            #(file!) [
                                 keep quote 'text
                                 keep _
                                 keep either node/name = 'text [
@@ -2866,7 +2871,7 @@ svg: make object! [
                                 ]
                             ]
 
-                            ; this surely needs a fix
+                            ; what even is this?
                             ;
                             other [
                                 if all [
@@ -2989,6 +2994,14 @@ svg: make object! [
             ]
         ]
 
+        append-node: func [
+            parent [block!]
+            node [block!]
+        ][
+            also tail parent/3
+            append parent/3 neaten/first node
+        ]
+
         add-rectangle: func [
             container [block!]
             attributes [map! none!]
@@ -3009,15 +3022,15 @@ svg: make object! [
                 _
             ]
 
-            switch type-of/word radius [
-                pair! block! [
+            switch type-of radius [
+                #(pair!) #(block!) [
                     append node/2 reduce [
                         'rx radius/1
                         'ry radius/2
                     ]
                 ]
 
-                integer! decimal! [
+                #(integer!) #(decimal!) [
                     append node/2 reduce [
                         'rx radius
                     ]
@@ -3026,8 +3039,7 @@ svg: make object! [
 
             do-attributes node attributes
 
-            also tail container/3
-            append container/3 node
+            append-node container node
         ]
 
         add-circle: func [
@@ -3051,8 +3063,7 @@ svg: make object! [
 
             do-attributes node attributes
 
-            also tail container/3
-            append container/3 node
+            append-node container node
         ]
 
         add-ellipse: func [
@@ -3126,8 +3137,7 @@ svg: make object! [
 
             do-attributes node attributes
 
-            also tail container/3
-            append container/3 node
+            append-node container node
         ]
 
         paths: make object! [
@@ -3521,34 +3531,240 @@ svg: make object! [
 
             neaten/pairs node/2/d
 
-            also tail container/3
-            append container/3 node
+            append-node container node
+        ]
+
+        add-linear-gradient: func [
+            document [block!]
+            id [issue!]
+            stops [block!]
+
+            /local node
+        ][
+            node: reduce [
+                'linearGradient
+                make map! 2
+                make block! 0
+            ]
+
+            put node/2 'id to string! id
+
+            do-with stops [
+                start: func [
+                    point [pair!]
+                ][
+                    if not zero? point/x [
+                        put node/2 'x1 to percent! point/x / 100
+                    ]
+
+                    if not zero? point/y [
+                        put node/2 'y1 to percent! point/y / 100
+                    ]
+
+                    point
+                ]
+
+                end: func [
+                    point [pair!]
+                ][
+                    if 100 <> point/x [
+                        put node/2 'x2 to percent! point/x / 100
+                    ]
+
+                    if not zero? point/y [
+                        put node/2 'y2 to percent! point/y / 100
+                    ]
+
+                    point
+                ]
+
+                user-space-on-use: func [] [
+                    put node/2 'gradientUnits 'userSpaceOnUse
+                ]
+
+                ; object-bounding-box: func [] [
+                ;     put node/2 'gradientUnits 'objectBoundingBox
+                ; ]
+
+                ; gradientTransform:  ; This attribute provides additional transformation to the gradient coordinate system. Value type: <transform-list>; Default value: identity transform; Animatable: yes
+
+                pad: func [] [
+                    put node/2 'spreadMethod 'pad
+                ]
+
+                reflect: func [] [
+                    put node/2 'spreadMethod 'reflect
+                ]
+
+                repeat: func [] [
+                    put node/2 'spreadMethod 'repeat
+                ]
+
+                stop: func [
+                    offset [number! none!]
+                    opacity [number! none!]
+                    color [tuple! word! issue! none!]
+                ][
+                    add-stop node offset opacity color
+                ]
+            ]
+
+            append-node document/3 node
+            ; document/3 = <defs>
+        ]
+
+        add-radial-gradient: func [
+            document [block!]
+            id [issue!]
+            stops [block!]
+
+            /local node
+        ][
+            node: reduce [
+                'radialGradient
+                make map! 2
+                make block! 0
+            ]
+
+            put node/2 'id to string! id
+
+            do-with stops [
+                center: func [
+                    point [pair!]
+                ][
+                    if .5 <> point/x [
+                        put node/2 'cx to percent! point/x / 100
+                    ]
+
+                    if .5 <> point/y [
+                        put node/2 'cy to percent! point/y / 100
+                    ]
+
+                    point
+                ]
+
+                radius: func [
+                    length [number!]
+                ][
+                    if .5 <> length [
+                        put node/2 'r to percent! length / 100
+                    ]
+
+                    length
+                ]
+
+                focal-point: func [
+                    point [pair!]
+                    length [number!]
+                ][
+                    if .5 <> point/x [
+                        put node/2 'fx to percent! point/x / 100
+                    ]
+
+                    if .5 <> point/y [
+                        put node/2 'fy to percent! point/y / 100
+                    ]
+
+                    if .5 <> length [
+                        put node/2 'fr to percent! length / 100
+                    ]
+
+                    node
+                ]
+
+                user-space-on-use: func [] [
+                    put node/2 'gradientUnits 'userSpaceOnUse
+                ]
+
+                ; object-bounding-box: func [] [
+                ;     put node/2 'gradientUnits 'objectBoundingBox
+                ; ]
+
+                ; gradientTransform:  ; This attribute provides additional transformation to the gradient coordinate system. Value type: <transform-list>; Default value: identity transform; Animatable: yes
+
+                pad: func [] [
+                    put node/2 'spreadMethod 'pad
+                ]
+
+                reflect: func [] [
+                    put node/2 'spreadMethod 'reflect
+                ]
+
+                repeat: func [] [
+                    put node/2 'spreadMethod 'repeat
+                ]
+
+                stop: func [
+                    offset [number! none!]
+                    opacity [number! none!]
+                    color [tuple! word! issue! none!]
+                ][
+                    add-stop node offset opacity color
+                ]
+            ]
+
+            append-node document/3 node
+            ; document/3 = <defs>
+        ]
+
+        add-stop: func [
+            gradient [block!]
+            offset [number! none!]
+            opacity [number! none!]
+            color [tuple! word! issue! none!]
+        ][
+            append-node gradient reduce [
+                'stop
+                make map! reduce [
+                    'offset if offset [
+                        mold offset
+                    ]
+
+                    'stop-opacity if opacity [
+                        to decimal! opacity
+                    ]
+
+                    'stop-color switch type-of color [
+                        #(tuple!) [
+                            paint/encode color
+                        ]
+
+                        #(word!) [
+                            form color
+                        ]
+
+                        #(issue!) [
+                            paint/from-hex color
+                        ]
+                    ]
+                ]
+                _
+            ]
         ]
 
         animate-attribute: func [
             container [block!]
             attribute [word!]
+            duration [time! integer! decimal!]
             values [block!]
-            timing [block!]
             /local node
         ][
+            if time? duration [
+                duration: to decimal! duration
+            ]
+
             node: reduce [
                 'animate
                 make map! reduce [
                     'attributeName attribute
                     'values combine/with values ";"
-                    'dur combine [
-                        to integer! timing/1
-                        "s"
-                    ]
+                    'dur join duration "s"
                     'repeatCount "indefinite"
                 ]
                 _
             ]
 
-            insert container/3 node
-
-            node
+            append-node container node
         ]
 
         create: func [
@@ -3569,7 +3785,9 @@ svg: make object! [
                         0 0 (numbers/encode size/x) (numbers/encode size/y)
                     ]
                 ]
-                make block! 8
+                reduce [
+                    'defs _ make block! 0
+                ]
             ]
 
             creator/do-attributes document attributes
@@ -3577,27 +3795,15 @@ svg: make object! [
             do-with body [
                 document: copy document
 
-                defs: func [
-                    body [block!]
-                    /local node
+                line: func [
+                    attributes [map! none!]
+                    from [pair!]
+                    to [pair!]
                 ][
-                    node: reduce [
-                        'defs
-                        make map! 0
-                        make block! 8
+                    creator/add-path document attributes [
+                        move :from
+                        line :to
                     ]
-
-                    append document/3 node
-
-                    do-with body [
-                        linear-gradient: func [
-                            body [block!]
-                        ][
-                            body
-                        ]
-                    ]
-
-                    node
                 ]
 
                 path: func [
@@ -3634,8 +3840,26 @@ svg: make object! [
                     attributes [map! none!]
                     points [block!]
                 ][
-                    apply get in creator 'add-polygon [
+                    apply :creator/add-polygon [
                         document attributes points
+                    ]
+                ]
+
+                linear-gradient: func [
+                    id [issue!]
+                    stops [block!]
+                ][
+                    apply :creator/add-linear-gradient [
+                        document id stops
+                    ]
+                ]
+
+                radial-gradient: func [
+                    id [issue!]
+                    stops [block!]
+                ][
+                    apply :creator/add-radial-gradient [
+                        document id stops
                     ]
                 ]
 
@@ -3648,20 +3872,27 @@ svg: make object! [
                     ]
 
                     do-with body [
-                        animate-attribute: func [
+                        animate: func [
                             attribute [word!]
+                            duration [time! integer! decimal!]
                             values [block!]
-                            timing [block!]
                         ][
-                            apply get in creator 'animate-attribute [
-                                node attribute values timing
+                            apply :creator/animate-attribute [
+                                node attribute duration values
                             ]
                         ]
                     ]
+
+                    node
                 ]
             ]
 
             neaten/triplets document/3
+
+            if empty? document/3/3 [
+                remove/part document/3 3
+                ; remove DEFS if empty
+            ]
 
             document
         ]
@@ -3757,27 +3988,66 @@ svg: make object! [
                                     keep attribute
                                 ; ]
 
-                                keep case [
-                                    all [
-                                        name = 'path
-                                        attribute = 'd
-                                        block? value
-                                    ][
-                                        paths/encode/precise value encoding/precision
-                                    ]
+                                keep switch/default type-of value [
+                                    #(issue!) [
+                                        case [
+                                            find [id] attribute [
+                                                to string! value
+                                            ]
 
-                                    issue? value [
-                                        either find [id] attribute [
-                                            to string! value
-                                        ][
-                                            paint/encode paint/from-hex value
+                                            parse form value [
+                                                3 hex* | 6 hex* | 8 hex*
+                                            ][
+                                                paint/encode paint/from-hex value
+                                            ]
+
+                                            #else rejoin [
+                                                "url(#" form value ")"
+                                            ]
                                         ]
                                     ]
 
-                                    block? value [
-                                        ; tranform attribute, others?
+                                    #(decimal!) [
+                                        either find [x x1 x2 y y1 y2 cx cy dx dy r rx ry width height] attribute [
+                                            numbers/encode/precision value encoding/precision
+                                        ][
+                                            numbers/encode value
+                                        ]
+                                    ]
+
+                                    #(tuple!) [
+                                        paint/encode value
+                                    ]
+
+                                    #(url!) [
+                                        case [
+                                            not find/match value "id:#" [
+                                                form value
+                                            ]
+
+                                            find [id] attribute [
+                                                form skip value 3
+                                            ]
+
+                                            #else [
+                                                rejoin [
+                                                    "url(" skip value 3 #")"
+                                                ]
+                                            ]
+                                        ]
+                                    ]
+
+                                    #(block!) [
+                                        ; path & transform attributes; others?
 
                                         case [
+                                            all [
+                                                'path = name
+                                                'd = attribute
+                                            ][
+                                                paths/encode/precise value encoding/precision
+                                            ]
+
                                             parse value [
                                                 some [
                                                     word! paren!
@@ -3787,7 +4057,9 @@ svg: make object! [
                                             ]
 
                                             all [
-                                                attribute == 'transform
+                                                find [
+                                                    transform gradientTransform
+                                                ] attribute
 
                                                 parse value [
                                                     word! some number!
@@ -3803,22 +4075,8 @@ svg: make object! [
                                             ]
                                         ]
                                     ]
-
-                                    decimal? value [
-                                        either find [x x1 x2 y y1 y2 cx cy dx dy r rx ry width height] attribute [
-                                            numbers/encode/precision value encoding/precision
-                                        ][
-                                            numbers/encode value
-                                        ]
-                                    ]
-
-                                    tuple? value [
-                                        paint/encode value
-                                    ]
-
-                                    #else [
-                                        form value
-                                    ]
+                                ][
+                                    form value
                                 ]
                             ]
                         ]
