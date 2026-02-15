@@ -2,7 +2,7 @@ Rebol [
     Title: "SVG Tools"
     Author: "Christopher Ross-Gill"
     Date: 15-Feb-2026
-    Version: 0.4.2
+    Version: 0.4.3
     File: %svg.reb
 
     Purpose: {
@@ -27,6 +27,9 @@ Rebol [
     ]
 
     History: [
+        0.4.3 15-Feb-2026
+        "Add Tilted Linear Gradient"
+
         0.4.2 15-Feb-2026
         "Refactor with MAP/COMPOSE changes; remove legacy PATH code"
 
@@ -2379,6 +2382,20 @@ svg: make object! [
             ]
         ]
 
+        tilt: func [
+            center [pair!]
+            angle [number!]
+            length [integer! decimal!]
+        ][
+            center: center / 100
+            length: length / 200 * as-pair cosine angle sine angle
+
+            reduce [
+                as-pair center/x - length/x center/y - length/y
+                as-pair center/x + length/x center/y + length/y
+            ]
+        ]
+
         to-color: func [
             color [tuple! word! issue!]
         ][
@@ -2977,8 +2994,10 @@ svg: make object! [
             id [issue!]
             spec [block!]
 
-            /local node
+            /local node type center angle length
         ][
+            type: _
+
             node: compose/deep [
                 linearGradient #[
                     id (to string! id)
@@ -2989,6 +3008,12 @@ svg: make object! [
                 start: func [
                     point [pair!]
                 ][
+                    either type = 'tilted [
+                        do make error! "Cannot START tilting linear gradient"
+                    ][
+                        type: 'boxed
+                    ]
+
                     if not zero? point/x [
                         put node/2 'x1 to percent! point/x / 100
                     ]
@@ -3003,6 +3028,12 @@ svg: make object! [
                 end: func [
                     point [pair!]
                 ][
+                    either type = 'tilted [
+                        do make error! "Cannot END tilting linear gradient"
+                    ][
+                        type: 'boxed
+                    ]
+
                     if 1 <> point/x [
                         put node/2 'x2 to percent! point/x / 100
                     ]
@@ -3012,6 +3043,55 @@ svg: make object! [
                     ]
 
                     point
+                ]
+
+                ; LINEAR-GRADIENT by center, angle, length
+                tilt: func [] [
+                    either none? type [
+                        type: 'tilted
+                    ][
+                        do make error! "Cannot TILT boxed linear gradient"
+                    ]
+
+                    angle: 90
+                    length: 100
+                    center: 50x50
+
+                    yes
+                ]
+
+                center: func [
+                    value [pair!]
+                ][
+                    if type <> 'tilted [
+                        do make error! "CENTER not valid for BOXED linear gradient"
+                    ]
+
+                    center: value
+                ]
+
+                angle: func [
+                    value [integer!]
+                ][
+                    if type <> 'tilted [
+                        do make error! "ANGLE not valid for BOXED linear gradient"
+                    ]
+
+                    angle: value
+                ]
+
+                length: func [
+                    value [number!]
+                ][
+                    if type <> 'tilted [
+                        do make error! "LENGTH not valid for BOXED linear gradient"
+                    ]
+
+                    length: either percent? value [
+                        100 * value
+                    ][
+                        value
+                    ]
                 ]
 
                 user-space-on-use: func [] [
@@ -3052,6 +3132,15 @@ svg: make object! [
                 ][
                     add-stops node colors
                 ]
+            ]
+
+            if 'tilted = type [
+                length: tilt center angle length
+
+                put node/2 'x1 length/1/x
+                put node/2 'y1 length/1/y
+                put node/2 'x2 length/2/x
+                put node/2 'y2 length/2/y
             ]
 
             append-node document/3 node
