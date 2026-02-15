@@ -104,6 +104,8 @@ svg: make object! [
     ; quickie number parsing
     ; number*: charset "-.0123456789eE"
 
+    default-precision: 0.001
+
     name*: complement charset [
         9 10 12 13 32 34 39 44 59
     ]
@@ -292,8 +294,6 @@ svg: make object! [
             https://github.com/MadLittleMods/svg-curve-lib
             "Length (need to evaluate)"
         ]
-
-        default-precision: 0.001
 
         commands: #[
             #"M" move   #"m" 'move
@@ -1189,7 +1189,7 @@ svg: make object! [
             out prep emit command params value type last offset origin
         ][
             precision: any [
-                precision self/default-precision
+                precision default-precision
             ]
 
             offset:
@@ -3410,13 +3410,13 @@ svg: make object! [
             name [word! lit-word!]
             attributes [map! none!]
             kids [block! string! none!]
-            encoding [object!]
+            encoding [map!]
 
             /local out rule attribute part mark
         ][
             assert [
-                find/match words-of encoding [
-                    value precision pretty? parents
+                find/match keys-of encoding [
+                    value parents precision pretty?
                 ]
             ]
 
@@ -3621,10 +3621,10 @@ svg: make object! [
         ]
 
         encode: func [
-            "Convert SVG Model to SVG"
+            "Render SVG Document to SVG"
 
-            svg-block [block!]
-            "SVG Model"
+            document [block!]
+            "SVG Document"
 
             /precise
             "Constrain numbers to a specified precision"
@@ -3637,25 +3637,27 @@ svg: make object! [
 
             /local encoding
         ][
-            encoding: make object! compose/deep [
-                value: make string! 1024
+            encoding: compose #[
+                value (make string! 1024)
 
-                precision: any [
-                    (precision)
-                    0.001
-                ]
+                parents (copy [])
 
-                pretty?: did pretty
+                precision (
+                    any [
+                        precision
+                        default-precision
+                    ]
+                )
 
-                parents: make block! 8
+                pretty? (did pretty)
             ]
 
-            either parse svg-block [
+            either parse document [
                 'svg map! [block! | none!]
             ][
-                render-node 'svg svg-block/2 svg-block/3 encoding
+                render-node 'svg document/2 document/3 encoding
             ][
-                do make error! "Not an SVG document"
+                do make error! "Invalid SVG document"
             ]
 
             encoding/value
