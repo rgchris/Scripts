@@ -1,8 +1,8 @@
 Rebol [
     Title: "SVG Tools"
     Author: "Christopher Ross-Gill"
-    Date: 5-Feb-2026
-    Version: 0.4.1
+    Date: 15-Feb-2026
+    Version: 0.4.2
     File: %svg.reb
 
     Purpose: {
@@ -27,6 +27,9 @@ Rebol [
     ]
 
     History: [
+        0.4.2 15-Feb-2026
+        "Refactor with MAP/COMPOSE changes; remove legacy PATH code"
+
         0.4.1 5-Feb-2026
         "Added LINEAR-GRADIENT, RADIAL GRADIENT; cleaned up ANIMATE"
 
@@ -68,7 +71,7 @@ Rebol [
         }
 
         === "View/VID-related functions"
-        
+
         "Now contained within the SVG/VID sub-object"
 
         [view svg/vid/quick-layout load-svg read %my-svg.svg]
@@ -80,7 +83,7 @@ Rebol [
 
         https://developer.mozilla.org/en-US/docs/Web/SVG/Attribute/d
         "MDN Overview"
-        
+
         https://www.w3.org/TR/SVG11/paths.html#PathDataBNF
         "SVG (1.1)"
 
@@ -177,8 +180,6 @@ svg: make object! [
         ]
     ]
 
-    ; Microformats
-    ;
     numbers: context [
         decode: func [
             encoded [string! integer! decimal!]
@@ -192,11 +193,12 @@ svg: make object! [
 
             switch type-of value [
                 #(decimal!) [
-                    value
                     ; ; default rounding is bad, it has a destructive
                     ; ; influence on relative path values
                     ; ;
                     ; round/to value 0.001
+
+                    value
                 ]
 
                 #(integer!) [
@@ -212,12 +214,13 @@ svg: make object! [
         ][
             if parse number [
                 copy value number*
+
                 copy unit opt [
-                    #"%" | "px" | "mm" | "cm" | "in" | "pt" | #"s"
+                    #"%" | "px" | "mm" | "cm" | "in" | "pt" | #"s" | "deg"
                 ]
             ][
                 switch unit [
-                    _ "" "px" [
+                    _ "" "px" "deg" [
                         numbers/decode value
                     ]
 
@@ -229,7 +232,7 @@ svg: make object! [
                         to time! value
                     ]
 
-                    ; not yet supported
+                    ;@@ not yet supported
                     ; "mm" "cm" "in" "pt" [none]
                 ]
             ]
@@ -242,6 +245,7 @@ svg: make object! [
         ][
             if precision [
                 value: round/to value scale
+                ;@@ should this take PERCENT! into account?
             ]
 
             switch type-of value [
@@ -289,18 +293,7 @@ svg: make object! [
             "Length (need to evaluate)"
         ]
 
-        command: _
-        relative?:
-        implicit?:
-        offset:
-        origin:
-        params:
-        stack: make block! 8
-        precision: 0.001
-
-        mark:
-        value:
-        path: _
+        default-precision: 0.001
 
         commands: #[
             #"M" move   #"m" 'move
@@ -313,435 +306,6 @@ svg: make object! [
             #"Q" qcurve #"q" 'qcurve
             #"T" qcurv  #"t" 'qcurv
             #"A" arc    #"a" 'arc
-        ]
-
-        fail: func [
-            message [string!]
-        ][
-            do make error! rejoin [
-                message ": (" any [command #"_"] ") "
-                mold copy/part mark 30
-            ]
-        ]
-
-        ; Unit Products
-        ;
-        flag: [
-            [
-                #"0"
-                (append stack #(false))
-                |
-                #"1"
-                (append stack #(true))
-            ]
-            |
-            (fail "Could not consume flag")
-        ]
-
-        nonnegative-number: [
-            copy value unsigned*
-            (append stack numbers/decode value)
-            |
-            (fail "Could not consume non-negative number")
-        ]
-
-        number: [
-            copy value number*
-            (append stack numbers/decode value)
-            |
-            mark:
-            (fail "Could not consume number")
-        ]
-
-        ; Parameter Templates
-
-        coordinate: [
-            number
-        ]
-
-        coordinate-pair: [
-            coordinate
-            opt comma*
-            coordinate
-        ]
-
-        coordinate-pair-double: [
-            coordinate-pair
-            opt comma*
-            coordinate-pair
-        ]
-
-        coordinate-pair-triple: [
-            coordinate-pair
-            opt comma*
-            coordinate-pair
-            opt comma*
-            coordinate-pair
-        ]
-
-        elliptical-arc-sequence: [
-            nonnegative-number
-            opt comma*
-            nonnegative-number
-            opt comma*
-            number
-            comma*
-            flag
-            opt comma*
-            flag
-            opt comma*
-            coordinate-pair
-        ]
-
-        ; Commands
-        ;
-        move-to: [
-            [#"M" | #"m"]
-            (params: coordinate-pair)
-        ]
-
-        close-path: [
-            [#"Z" | #"z"]
-            (params: [])
-        ]
-
-        line-to: [
-            [#"L" | #"l"]
-            (params: coordinate-pair)
-        ]
-
-        horizontal-line-to: [
-            [#"H" | #"h"]
-            (params: coordinate)
-        ]
-
-        vertical-line-to: [
-            [#"V" | #"v"]
-            (params: coordinate)
-        ]
-
-        curve-to: [
-            [#"C" | #"c"]
-            (params: coordinate-pair-triple)
-        ]
-
-        smooth-curve-to: [
-            [#"S" | #"s"]
-            (params: coordinate-pair-double)
-        ]
-
-        quadratic-bezier-curve-to: [
-            [#"Q" | #"q"]
-            (params: coordinate-pair-double)
-        ]
-
-        smooth-quadratic-bezier-curve-to: [
-            [#"T" | #"t"]
-            (params: coordinate-pair)
-        ]
-
-        elliptical-arc: [
-            [#"A" | #"a"]
-            (params: elliptical-arc-sequence)
-        ]
-
-        ; Safe to delete?
-        ;
-        #[
-            svg-path: [
-                any space*
-                opt moveto-drawto-command-groups
-                any space*
-            ]
-
-            moveto-drawto-command-groups: [
-                moveto-drawto-command-group
-                |
-                moveto-drawto-command-group
-                any space*
-                moveto-drawto-command-groups
-            ]
-
-            moveto-drawto-command-group: [
-                moveto
-                any space*
-                opt drawto-commands
-            ]
-
-            drawto-commands: [
-                drawto-command
-                |
-                drawto-command
-                any space*
-                drawto-commands
-            ]
-
-            drawto-command: [
-                closepath
-                |
-                lineto
-                |
-                horizontal-lineto
-                |
-                vertical-lineto
-                |
-                curveto
-                |
-                smooth-curveto
-                |
-                quadratic-bezier-curveto
-                |
-                smooth-quadratic-bezier-curveto
-                |
-                elliptical-arc
-            ]
-
-            moveto: [
-                ( "M" | "m" )
-                any space*
-                moveto-argument-sequence
-            ]
-
-            moveto-argument-sequence: [
-                coordinate-pair
-                |
-                coordinate-pair
-                opt comma-wsp
-                lineto-argument-sequence
-            ]
-
-            closepath: [
-                ("Z" | "z")
-            ]
-
-            lineto: [
-                ( "L" | "l" )
-                any space*
-                lineto-argument-sequence
-            ]
-
-            lineto-argument-sequence: [
-                coordinate-pair
-                |
-                coordinate-pair
-                opt comma-wsp
-                lineto-argument-sequence
-            ]
-
-            horizontal-lineto: [
-                ( "H" | "h" )
-                any space*
-                horizontal-lineto-argument-sequence
-            ]
-
-            horizontal-lineto-argument-sequence: [
-                coordinate
-                |
-                coordinate
-                opt comma-wsp
-                horizontal-lineto-argument-sequence
-            ]
-
-            vertical-lineto: [
-                ( "V" | "v" )
-                any space*
-                vertical-lineto-argument-sequence
-            ]
-
-            vertical-lineto-argument-sequence: [
-                coordinate
-                |
-                coordinate
-                opt comma-wsp
-                vertical-lineto-argument-sequence
-            ]
-
-            curveto: [
-                ( "C" | "c" )
-                any space*
-                curveto-argument-sequence
-            ]
-
-            curveto-argument-sequence: [
-                curveto-argument
-                |
-                curveto-argument
-                opt comma-wsp
-                curveto-argument-sequence
-            ]
-
-            curveto-argument: [
-                coordinate-pair
-                opt comma-wsp
-                coordinate-pair
-                opt comma-wsp
-                coordinate-pair
-            ]
-
-            smooth-curveto: [
-                ( "S" | "s" )
-                any space*
-                smooth-curveto-argument-sequence
-            ]
-
-            smooth-curveto-argument-sequence: [
-                smooth-curveto-argument
-                |
-                smooth-curveto-argument
-                opt comma-wsp
-                smooth-curveto-argument-sequence
-            ]
-
-            smooth-curveto-argument: [
-                coordinate-pair
-                opt comma-wsp
-                coordinate-pair
-            ]
-
-            quadratic-bezier-curveto: [
-                ( "Q" | "q" )
-                any space*
-                quadratic-bezier-curveto-argument-sequence
-            ]
-
-            quadratic-bezier-curveto-argument-sequence: [
-                quadratic-bezier-curveto-argument
-                |
-                quadratic-bezier-curveto-argument
-                opt comma-wsp
-                quadratic-bezier-curveto-argument-sequence
-            ]
-
-            quadratic-bezier-curveto-argument: [
-                coordinate-pair
-                opt comma-wsp
-                coordinate-pair
-            ]
-
-            smooth-quadratic-bezier-curveto: [
-                ( "T" | "t" )
-                any space*
-                smooth-quadratic-bezier-curveto-argument-sequence
-            ]
-
-            smooth-quadratic-bezier-curveto-argument-sequence: [
-                coordinate-pair
-                |
-                coordinate-pair
-                opt comma-wsp
-                smooth-quadratic-bezier-curveto-argument-sequence
-            ]
-
-            elliptical-arc: [
-                ( "A" | "a" )
-                any space*
-                elliptical-arc-argument-sequence
-            ]
-
-            elliptical-arc-argument-sequence: [
-                elliptical-arc-argument
-                |
-                elliptical-arc-argument
-                opt comma-wsp
-                elliptical-arc-argument-sequence
-            ]
-
-            elliptical-arc-argument: [
-                nonnegative-number
-                opt comma-wsp
-                nonnegative-number
-                opt comma-wsp
-                number
-                comma-wsp
-                flag
-                opt comma-wsp
-                flag
-                opt comma-wsp
-                coordinate-pair
-            ]
-
-            coordinate-pair: [
-                coordinate
-                opt comma-wsp
-                coordinate
-            ]
-
-            coordinate: [
-                number
-            ]
-
-            nonnegative-number: [
-                integer-constant
-                |
-                floating-point-constant
-            ]
-
-            number: [
-                opt sign
-                integer-constant
-                |
-                opt sign
-                floating-point-constant
-            ]
-
-            flag: [
-                #"0" | #"1"
-            ]
-
-            comma-wsp: [
-                some space*
-                opt comma
-                any space*
-                |
-                comma
-                any space*
-            ]
-
-            comma: [
-                #","
-            ]
-
-            integer-constant: [
-                digit-sequence
-            ]
-
-            floating-point-constant: [
-                fractional-constant
-                opt exponent
-                |
-                digit-sequence
-                exponent
-            ]
-
-            fractional-constant: [
-                opt digit-sequence
-                #"."
-                digit-sequence
-                |
-                digit-sequence
-                #"."
-            ]
-
-            exponent: [
-                #"e" | #"E"
-                opt sign
-                digit-sequence
-            ]
-
-            sign: [
-                #"+" | #"-"
-            ]
-
-            digit-sequence: [
-                digit
-                |
-                digit
-                digit-sequence
-            ]
-
-            digit: [
-                "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9"
-            ]
         ]
 
         space*: charset [
@@ -1198,8 +762,8 @@ svg: make object! [
                                     decoder/value/1: decoder/value/1 + decoder/offset
                                 ]
 
-                                decoder/value/1/x: round/to decoder/value/1/x precision
-                                decoder/value/1/y: round/to decoder/value/1/y precision
+                                decoder/value/1/x: round/to decoder/value/1/x decoder/precision
+                                decoder/value/1/y: round/to decoder/value/1/y decoder/precision
 
                                 decoder/offset: decoder/value/1
                             ]
@@ -1210,10 +774,10 @@ svg: make object! [
                                     decoder/value/2: decoder/value/2 + decoder/offset
                                 ]
 
-                                decoder/value/1/x: round/to decoder/value/1/x precision
-                                decoder/value/1/y: round/to decoder/value/1/y precision
-                                decoder/value/2/x: round/to decoder/value/2/x precision
-                                decoder/value/2/y: round/to decoder/value/2/y precision
+                                decoder/value/1/x: round/to decoder/value/1/x decoder/precision
+                                decoder/value/1/y: round/to decoder/value/1/y decoder/precision
+                                decoder/value/2/x: round/to decoder/value/2/x decoder/precision
+                                decoder/value/2/y: round/to decoder/value/2/y decoder/precision
 
                                 decoder/offset: decoder/value/2
                             ]
@@ -1225,12 +789,12 @@ svg: make object! [
                                     decoder/value/3: decoder/value/3 + decoder/offset
                                 ]
 
-                                decoder/value/1/x: round/to decoder/value/1/x precision
-                                decoder/value/1/y: round/to decoder/value/1/y precision
-                                decoder/value/2/x: round/to decoder/value/2/x precision
-                                decoder/value/2/y: round/to decoder/value/2/y precision
-                                decoder/value/3/x: round/to decoder/value/3/x precision
-                                decoder/value/3/y: round/to decoder/value/3/y precision
+                                decoder/value/1/x: round/to decoder/value/1/x decoder/precision
+                                decoder/value/1/y: round/to decoder/value/1/y decoder/precision
+                                decoder/value/2/x: round/to decoder/value/2/x decoder/precision
+                                decoder/value/2/y: round/to decoder/value/2/y decoder/precision
+                                decoder/value/3/x: round/to decoder/value/3/x decoder/precision
+                                decoder/value/3/y: round/to decoder/value/3/y decoder/precision
 
                                 decoder/offset: decoder/value/3
                             ]
@@ -1240,8 +804,8 @@ svg: make object! [
                                     decoder/value/5: decoder/value/5 + decoder/offset
                                 ]
 
-                                decoder/value/5/x: round/to decoder/value/5/x precision
-                                decoder/value/5/y: round/to decoder/value/5/y precision
+                                decoder/value/5/x: round/to decoder/value/5/x decoder/precision
+                                decoder/value/5/y: round/to decoder/value/5/y decoder/precision
 
                                 decoder/offset: decoder/value/5
                             ]
@@ -1353,181 +917,6 @@ svg: make object! [
                     keep/only copy decoder/value
                 ]
             ]
-        ]
-
-        ; Structure
-        ;
-        keep-params: [
-            (
-                switch command [
-                    move [
-                        if relative? [
-                            stack/1: round/to stack/1 + offset/1 precision
-                            stack/2: round/to stack/2 + offset/2 precision
-                        ]
-
-                        origin/1:
-                        offset/1: stack/1
-
-                        origin/2:
-                        offset/2: stack/2
-                    ]
-
-                    hline [
-                        if relative? [
-                            stack/1: round/to stack/1 + offset/1 precision
-                        ]
-
-                        offset/1: stack/1
-                    ]
-
-                    vline [
-                        if relative? [
-                            stack/1: round/to stack/1 + offset/2 precision
-                        ]
-
-                        offset/2: stack/1
-                    ]
-
-                    line qcurv [
-                        if relative? [
-                            stack/1: round/to stack/1 + offset/1 precision
-                            stack/2: round/to stack/2 + offset/2 precision
-                        ]
-
-                        offset/1: stack/1
-                        offset/2: stack/2
-                    ]
-
-                    curv qcurve [
-                        if relative? [
-                            stack/1: round/to stack/1 + offset/1 precision
-                            stack/2: round/to stack/2 + offset/2 precision
-                            stack/3: round/to stack/3 + offset/1 precision
-                            stack/4: round/to stack/4 + offset/2 precision
-                        ]
-
-                        offset/1: stack/3
-                        offset/2: stack/4
-                    ]
-
-                    curve [
-                        if relative? [
-                            stack/1: round/to stack/1 + offset/1 precision
-                            stack/2: round/to stack/2 + offset/2 precision
-                            stack/3: round/to stack/3 + offset/1 precision
-                            stack/4: round/to stack/4 + offset/2 precision
-                            stack/5: round/to stack/5 + offset/1 precision
-                            stack/6: round/to stack/6 + offset/2 precision
-                        ]
-
-                        offset/1: stack/5
-                        offset/2: stack/6
-                    ]
-
-                    arc [
-                        if relative? [
-                            stack/6: round/to stack/6 + offset/1 precision
-                            stack/7: round/to stack/7 + offset/2 precision
-                        ]
-
-                        offset/1: stack/6
-                        offset/2: stack/7
-                    ]
-
-                    close [
-                        offset/1: origin/1
-                        offset/2: origin/2
-                    ]
-                ]
-
-                repend path [
-                    command
-                    take/part stack tail stack
-                ]
-            )
-        ]
-
-        expand: [
-            (
-                clear stack
-
-                command: _
-                relative?: _
-                implicit?: _
-                offset: 0x0
-                origin: 0x0
-
-                path: copy [
-                    
-                ]
-            )
-
-            opt space*
-
-            opt [
-                mark:
-                move-to
-                (command: mark/1)
-                opt space*
-                params
-                (
-                    command: select/case commands command
-                    implicit?: #(false)
-                    relative?: lit-word? :command
-                    command: to word! command
-                )
-                keep-params
-
-                any [
-                    opt space*
-                    mark:
-                    [
-                        move-to
-                        |
-                        close-path
-                        |
-                        line-to
-                        |
-                        horizontal-line-to
-                        |
-                        vertical-line-to
-                        |
-                        curve-to
-                        |
-                        smooth-curve-to
-                        |
-                        quadratic-bezier-curve-to
-                        |
-                        smooth-quadratic-bezier-curve-to
-                        |
-                        elliptical-arc
-                    ]
-                    (command: mark/1)
-                    opt space* params
-                    (
-                        command: select/case commands command
-                        implicit?: #(false)
-                        relative?: lit-word? :command
-                        command: to word! command
-                    )
-                    keep-params
-                    |
-                    opt space* end break
-                    |
-                    opt comma* params
-                    (
-                        implicit?: #(true)
-
-                        if command = 'move [
-                            command: 'line
-                        ]
-                    )
-                    keep-params
-                ]
-            ]
-
-            fail-if-not-end
         ]
 
         ; Interpret
@@ -1754,15 +1143,6 @@ svg: make object! [
             ]
         ]
 
-        deecode: func [
-            path [string!]
-            /local out
-        ][
-            if out: parse/case path paths/expand [
-                neaten/words paths/path
-            ]
-        ]
-
         round-params: func [
             command [word!]
             params [block!]
@@ -1809,7 +1189,7 @@ svg: make object! [
             out prep emit command params value type last offset origin
         ][
             precision: any [
-                precision self/precision
+                precision self/default-precision
             ]
 
             offset:
@@ -2416,7 +1796,11 @@ svg: make object! [
             lists/encode/with-comma collect [
                 parse value [
                     some [
-                        copy part [word! paren!]
+                        copy part [
+                            word! [
+                                paren! | block!
+                            ]
+                        ]
                         (
                             keep rejoin [
                                 form part/1 "(" lists/encode/with-comma part/2 ")"
@@ -2549,6 +1933,7 @@ svg: make object! [
                         viewbox [
                             if all [
                                 value: lists/decode attribute/value
+
                                 parse value [
                                     4 integer!
                                 ]
@@ -2994,6 +2379,24 @@ svg: make object! [
             ]
         ]
 
+        to-color: func [
+            color [tuple! word! issue!]
+        ][
+            switch type-of color [
+                #(tuple!) [
+                    paint/encode color
+                ]
+
+                #(word!) [
+                    form color
+                ]
+
+                #(issue!) [
+                    paint/from-hex color
+                ]
+            ]
+        ]
+
         append-node: func [
             parent [block!]
             node [block!]
@@ -3011,15 +2414,13 @@ svg: make object! [
             radius [number! pair! block!]
             /local node
         ][
-            node: reduce [
-                'rect
-                make map! reduce [
-                    'x offset/1
-                    'y offset/2
-                    'width size/1
-                    'height size/2
-                ]
-                _
+            node: compose/deep [
+                rect #[
+                    x (offset/1)
+                    y (offset/2)
+                    width (size/1)
+                    height (size/2)
+                ] _
             ]
 
             switch type-of radius [
@@ -3049,16 +2450,12 @@ svg: make object! [
             radius [number!]
             /local node
         ][
-            node: reduce [
-                'circle
-
-                make map! reduce [
-                    'cx center/x
-                    'cy center/y
-                    'r radius
-                ]
-
-                _
+            node: compose/deep [
+                circle #[
+                    cx (center/x)
+                    cy (center/y)
+                    r (radius)
+                ] _
             ]
 
             do-attributes node attributes
@@ -3069,20 +2466,45 @@ svg: make object! [
         add-ellipse: func [
             container [block!]
             attributes [map! none!]
-            center [pair! block!]
-            radius [pair! block!]
+            center [pair!]
+            radius [pair!]
+            /local node
         ][
-            <ellipse cx="100" cy="50" rx="100" ry="50" />
+            node: compose/deep [
+                ellipse #[
+                    cx (center/x)
+                    cy (center/y)
+                    rx (radius/x)
+                    ry (radius/y)
+                ] _
+            ]
+
+            do-attributes node attributes
+
+            append-node container node
         ]
 
         add-image: func [
             container [block!]
             attributes [map! none!]
-            target [url! file!]
-            offset [pair! block!]
-            size [pair! block!]
+            target [url! file! issue!]
+            offset [pair!]
+            size [pair!]
+            /local node
         ][
-            <image href="mdn_logo_only_color.png" height="200" width="200"/>
+            node: compose/deep [
+                image #[
+                    href (target)
+                    x (offset/x)
+                    y (offset/y)
+                    width (size/x)
+                    height (size/y)
+                ] _
+            ]
+
+            do-attributes node attributes
+
+            append-node container node
         ]
 
         add-line: func [
@@ -3092,7 +2514,18 @@ svg: make object! [
             end [pair! block!]
             /local node
         ][
-            <line x1="0" y1="80" x2="100" y2="20" stroke="black" />
+            node: compose/deep [
+                line #[
+                    x1 (start/x)
+                    y1 (start/y)
+                    x2 (end/x)
+                    y2 (end/y)
+                ] _
+            ]
+
+            do-attributes node attributes
+
+            append-node container node
         ]
 
         add-polyline: func [
@@ -3101,8 +2534,28 @@ svg: make object! [
             points [block!]
             /local node
         ][
-            
-            <polyline points="60, 110 65, 120 70, 115 75, 130 80, 125 85, 140 90, 135 95, 150 100, 145"/>
+            node: compose/deep/only [
+                polyline #[
+                    points (
+                        collect [
+                            assert [
+                                parse points: reduce points [
+                                    some pair!
+                                ]
+                            ]
+
+                            foreach point reduce points [
+                                keep point/x
+                                keep point/y
+                            ]
+                        ]
+                    )
+                ] _
+            ]
+
+            do-attributes node attributes
+
+            append-node container node
         ]
 
         add-polygon: func [
@@ -3111,28 +2564,23 @@ svg: make object! [
             points [block!]
             /local node
         ][
-            node: reduce [
-                'polygon
-
-                make map! reduce [
-                    'points collect [
-                        assert [
-                            parse points: reduce points [
-                                some [
-                                    pair!
-                                    |
-                                    into [number! number!]
+            node: compose/deep/only [
+                polygon #[
+                    points (
+                        collect [
+                            assert [
+                                parse points: reduce points [
+                                    some pair!
                                 ]
                             ]
-                        ]
 
-                        foreach point reduce points [
-                            keep point/1
-                            keep point/2
+                            foreach point reduce points [
+                                keep point/x
+                                keep point/y
+                            ]
                         ]
-                    ]
-                ]
-                _
+                    )
+                ] _
             ]
 
             do-attributes node attributes
@@ -3419,15 +2867,13 @@ svg: make object! [
             commands [block!]
             /local path node offset
         ][
-            path: copy []
-
-            node: reduce [
-                'path
-                make map! reduce [
-                    'd path
-                ]
-                _
+            node: compose/deep [
+                path #[
+                    d []
+                ] _
             ]
+
+            path: node/path/d
 
             do-attributes node attributes
 
@@ -3529,19 +2975,17 @@ svg: make object! [
         add-linear-gradient: func [
             document [block!]
             id [issue!]
-            stops [block!]
+            spec [block!]
 
             /local node
         ][
-            node: reduce [
-                'linearGradient
-                make map! 2
-                make block! 0
+            node: compose/deep [
+                linearGradient #[
+                    id (to string! id)
+                ] []
             ]
 
-            put node/2 'id to string! id
-
-            do-with stops [
+            do-with spec [
                 start: func [
                     point [pair!]
                 ][
@@ -3559,7 +3003,7 @@ svg: make object! [
                 end: func [
                     point [pair!]
                 ][
-                    if 100 <> point/x [
+                    if 1 <> point/x [
                         put node/2 'x2 to percent! point/x / 100
                     ]
 
@@ -3578,7 +3022,10 @@ svg: make object! [
                 ;     put node/2 'gradientUnits 'objectBoundingBox
                 ; ]
 
-                ; gradientTransform:  ; This attribute provides additional transformation to the gradient coordinate system. Value type: <transform-list>; Default value: identity transform; Animatable: yes
+                ; gradientTransform:
+                ; This attribute provides additional transformation to the gradient coordinate
+                ; system. Value type: <transform-list>; Default value: identity transform;
+                ; Animatable: yes
 
                 pad: func [] [
                     put node/2 'spreadMethod 'pad
@@ -3599,6 +3046,12 @@ svg: make object! [
                 ][
                     add-stop node offset opacity color
                 ]
+
+                colors: func [
+                    colors [block!]
+                ][
+                    add-stops node colors
+                ]
             ]
 
             append-node document/3 node
@@ -3612,23 +3065,21 @@ svg: make object! [
 
             /local node
         ][
-            node: reduce [
-                'radialGradient
-                make map! 2
-                make block! 0
+            node: compose/deep [
+                radialGradient #[
+                    id (to string! id)
+                ] []
             ]
-
-            put node/2 'id to string! id
 
             do-with stops [
                 center: func [
                     point [pair!]
                 ][
-                    if .5 <> point/x [
+                    if 50 <> point/x [
                         put node/2 'cx to percent! point/x / 100
                     ]
 
-                    if .5 <> point/y [
+                    if 50 <> point/y [
                         put node/2 'cy to percent! point/y / 100
                     ]
 
@@ -3638,8 +3089,12 @@ svg: make object! [
                 radius: func [
                     length [number!]
                 ][
-                    if .5 <> length [
-                        put node/2 'r to percent! length / 100
+                    if not percent? length [
+                        length: to percent! length / 100
+                    ]
+
+                    if length <> 50% [
+                        put node/2 'r length
                     ]
 
                     length
@@ -3649,16 +3104,20 @@ svg: make object! [
                     point [pair!]
                     length [number!]
                 ][
-                    if .5 <> point/x [
+                    if not percent? length [
+                        length: to percent! length / 100
+                    ]
+
+                    if 50 <> point/x [
                         put node/2 'fx to percent! point/x / 100
                     ]
 
-                    if .5 <> point/y [
+                    if 50 <> point/y [
                         put node/2 'fy to percent! point/y / 100
                     ]
 
-                    if .5 <> length [
-                        put node/2 'fr to percent! length / 100
+                    if not zero? length [
+                        put node/2 'fr length
                     ]
 
                     node
@@ -3693,6 +3152,12 @@ svg: make object! [
                 ][
                     add-stop node offset opacity color
                 ]
+
+                colors: func [
+                    colors [block!]
+                ][
+                    add-stops node colors
+                ]
             ]
 
             append-node document/3 node
@@ -3705,33 +3170,52 @@ svg: make object! [
             opacity [number! none!]
             color [tuple! word! issue! none!]
         ][
-            append-node gradient reduce [
-                'stop
-                make map! reduce [
-                    'offset if offset [
-                        mold offset
-                    ]
-
-                    'stop-opacity if opacity [
-                        to decimal! opacity
-                    ]
-
-                    'stop-color switch type-of color [
-                        #(tuple!) [
-                            paint/encode color
+            append-node gradient compose/deep [
+                stop #[
+                    offset (
+                        if offset [
+                            mold offset
                         ]
+                    )
 
-                        #(word!) [
-                            form color
+                    stop-opacity (
+                        if opacity [
+                            to decimal! opacity
                         ]
+                    )
 
-                        #(issue!) [
-                            paint/from-hex color
-                        ]
-                    ]
-                ]
-                _
+                    stop-color (to-color color)
+                ] _
             ]
+        ]
+
+        add-stops: func [
+            gradient [block!]
+            colors [block!]
+
+            /local offset end interval
+        ][
+            assert [
+                not tail? next colors
+            ]
+
+            offset: 0%
+            end: 100%
+
+            interval: to percent! divide end - offset -1 + length-of colors
+
+            append-node gradient collect-each color colors [
+                keep compose/deep [
+                    stop #[
+                        offset (round/to offset 0.01%)
+                        stop-color (to-color color)
+                    ] _
+                ]
+
+                offset: offset + interval
+            ]
+
+            gradient
         ]
 
         animate-attribute: func [
@@ -3739,24 +3223,44 @@ svg: make object! [
             attribute [word!]
             duration [time! integer! decimal!]
             values [block!]
+
             /local node
         ][
-            if time? duration [
-                duration: to decimal! duration
+            if not find container/2 attribute [
+                put container/2 attribute first values
             ]
 
-            node: reduce [
-                'animate
-                make map! reduce [
-                    'attributeName attribute
-                    'values combine/with values ";"
-                    'dur join duration "s"
-                    'repeatCount "indefinite"
-                ]
-                _
+            node: compose/deep [
+                animate #[
+                    attributeName (attribute)
+                    values (combine/with values ";")
+                    dur (duration)
+                    repeatCount "indefinite"
+                ] _
             ]
 
             append-node container node
+        ]
+
+        animate: func [
+            node [block!]
+            spec [block!]
+        ][
+            if not block? node/3 [
+                node/3: make block! 0
+            ]
+
+            do-with spec [
+                animate: func [
+                    attribute [word!]
+                    duration [time! integer! decimal!]
+                    values [block!]
+                ][
+                    creator/animate-attribute node attribute duration values
+                ]
+            ]
+
+            node
         ]
 
         create: func [
@@ -3766,19 +3270,17 @@ svg: make object! [
             attributes [map!]
             /local document
         ][
-            document: reduce [
-                'svg
-                make map! compose/deep [
+            document: compose/deep [
+                svg #[
                     xmlns http://www.w3.org/2000/svg
                     version 1.1
-                    width (numbers/encode size/x)
-                    height (numbers/encode size/y)
+                    width (to integer! size/x)
+                    height (to integer! size/y)
                     viewBox [
-                        0 0 (numbers/encode size/x) (numbers/encode size/y)
+                        0 0 (to integer! size/x) (to integer! size/y)
                     ]
-                ]
-                reduce [
-                    'defs _ make block! 0
+                ][
+                    defs _ []
                 ]
             ]
 
@@ -3793,15 +3295,14 @@ svg: make object! [
                     to [pair!]
                 ][
                     creator/add-path document attributes [
-                        move :from
-                        line :to
+                        move from
+                        line to - from
                     ]
                 ]
 
                 path: func [
                     attributes [map! none!]
                     commands [block!]
-                    /local path node offset
                 ][
                     creator/add-path document attributes commands
                 ]
@@ -3813,9 +3314,7 @@ svg: make object! [
                     /rounded
                     radius [number! pair! block!]
                 ][
-                    apply :creator/add-rectangle [
-                        document attributes offset size rounded radius
-                    ]
+                    creator/add-rectangle/:rounded document attributes offset size radius
                 ]
 
                 circle: func [
@@ -3823,59 +3322,43 @@ svg: make object! [
                     center [pair!]
                     radius [number!]
                 ][
-                    apply :creator/add-circle [
-                        document attributes center radius
-                    ]
+                    creator/add-circle document attributes center radius
+                ]
+
+                ellipse: func [
+                    attributes [map! none!]
+                    center [pair!]
+                    radius [pair!]
+                ][
+                    creator/add-ellipse document attributes center radius
                 ]
 
                 polygon: func [
                     attributes [map! none!]
                     points [block!]
                 ][
-                    apply :creator/add-polygon [
-                        document attributes points
-                    ]
+                    creator/add-polygon document attributes points
                 ]
 
                 linear-gradient: func [
                     id [issue!]
-                    stops [block!]
+                    spec [block!]
                 ][
-                    apply :creator/add-linear-gradient [
-                        document id stops
-                    ]
+                    creator/add-linear-gradient document id spec
                 ]
 
                 radial-gradient: func [
                     id [issue!]
-                    stops [block!]
+                    spec [block!]
                 ][
-                    apply :creator/add-radial-gradient [
-                        document id stops
-                    ]
+                    creator/add-radial-gradient document id spec
                 ]
 
                 animate: func [
                     node [block!]
-                    body [block!]
+                    spec [block!]
                 ][
-                    if not block? node/3 [
-                        node/3: make block! 0
-                    ]
-
-                    do-with body [
-                        animate: func [
-                            attribute [word!]
-                            duration [time! integer! decimal!]
-                            values [block!]
-                        ][
-                            apply :creator/animate-attribute [
-                                node attribute duration values
-                            ]
-                        ]
-                    ]
-
-                    node
+                    creator/animate node spec
                 ]
             ]
 
@@ -3911,13 +3394,13 @@ svg: make object! [
 
         trim/auto rejoin [
             {
-                <svg xmlns="http://www.w3.org/2000/svg" version="1.1" }
-                {width="} size/x {" }
-                {height="} size/y {" }
-                {viewBox="} reform [top-left/x top-left/y bottom-right/x bottom-right/y] {" }
-                {xmlns:xlink="http://www.w3.org/1999/xlink">
-                    } shape {
-                </svg>
+            <svg xmlns="http://www.w3.org/2000/svg" version="1.1" }
+            {width="} size/x {" }
+            {height="} size/y {" }
+            {viewBox="} reform [top-left/x top-left/y bottom-right/x bottom-right/y] {" }
+            {xmlns:xlink="http://www.w3.org/1999/xlink">
+                } shape {
+            </svg>
             }
         ]
     ]
@@ -3974,36 +3457,58 @@ svg: make object! [
                     if map? attributes [
                         foreach [attribute value] attributes [
                             if not none? value [
-                                ; keep either find form attribute #"|" [
-                                ;     to url! replace form attribute #"|" #":"
-                                ; ][
-                                    keep attribute
-                                ; ]
+                                keep attribute
 
                                 keep switch/default type-of value [
                                     #(issue!) [
-                                        case [
-                                            find [id] attribute [
+                                        switch/default attribute [
+                                            id [
                                                 to string! value
                                             ]
 
-                                            parse form value [
-                                                3 hex* | 6 hex* | 8 hex*
+                                            href [
+                                                mold value
+                                            ]
+                                        ][
+                                            either parse form value [
+                                                8 hex* | 6 hex* | 3 hex*
                                             ][
                                                 paint/encode paint/from-hex value
-                                            ]
-
-                                            #else rejoin [
-                                                "url(#" form value ")"
+                                            ][
+                                                rejoin [
+                                                    "url(#" form value ")"
+                                                ]
                                             ]
                                         ]
                                     ]
 
                                     #(decimal!) [
-                                        either find [x x1 x2 y y1 y2 cx cy dx dy r rx ry width height] attribute [
-                                            numbers/encode/precision value encoding/precision
+                                        switch/default attribute [
+                                            x x1 x2
+                                            y y1 y2
+                                            cx cy
+                                            dx dy
+                                            r rx ry
+                                            fr fx fy
+                                            width height [
+                                                numbers/encode/precision value encoding/precision
+                                            ]
+
+                                            dur [
+                                                join numbers/encode value "s"
+                                            ]
                                         ][
                                             numbers/encode value
+                                        ]
+                                    ]
+
+                                    #(integer!) [
+                                        switch/default attribute [
+                                            dur [
+                                                join form value #"s"
+                                            ]
+                                        ][
+                                            form value
                                         ]
                                     ]
 
@@ -4042,7 +3547,7 @@ svg: make object! [
 
                                             parse value [
                                                 some [
-                                                    word! paren!
+                                                    word! [paren! | block!]
                                                 ]
                                             ][
                                                 transforms/encode value
@@ -4066,6 +3571,10 @@ svg: make object! [
                                                 lists/encode/with-comma value
                                             ]
                                         ]
+                                    ]
+
+                                    #(time!) [
+                                        join numbers/encode to decimal! value #"s"
                                     ]
                                 ][
                                     form value
