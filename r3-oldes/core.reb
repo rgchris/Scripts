@@ -14,9 +14,9 @@ Rebol [
     Name: rgchris.core
     Exports: [
         neaten
-        type-of length-of
-        collect-while collect-each
-        elide flatten private amass fold
+        type-of length-of suffix-of context-of form-of for-each for-all
+        collect-while collect-each collect-all
+        elide flatten has-option private amass fold
     ]
 
     Needs: 3.20.0
@@ -28,6 +28,12 @@ if not in lib 'did [
 
 type-of: :lib/type?
 length-of: :lib/length?
+suffix-of: :lib/suffix?
+context-of: :lib/context?
+form-of: :lib/form
+for-each: :lib/foreach
+for-all: :lib/forall
+; literate naming alternatives
 
 neaten: func [
     "Resets new-line markers in a BLOCK! value. Default: all new-line markers ON"
@@ -173,7 +179,24 @@ collect-each: func [
     "Block to evaluate each time"
 ][
     collect reduce [
-        :foreach :word 'data body
+        :for-each :word 'data body
+    ]
+]
+
+collect-all: func [
+    {
+    Evaluates a block for every value in a series, storing values via KEEP function,
+    and returns block of collected values.
+    }
+
+    'word [word!]
+    "Word that refers to the series, set to each position in series"
+
+    body [block!]
+    "Block to evaluate each time"
+][
+    collect reduce [
+        :for-all :word body
     ]
 ]
 
@@ -210,6 +233,16 @@ flatten: func [
     head block
 ]
 
+has-option: func [
+    options [block! none!]
+    option [word!]
+][
+    did all [
+        options
+        find options option
+    ]
+]
+
 private: func [
     context [block! object!]
     spec [block!]
@@ -227,7 +260,7 @@ amass: func [
 ][
     out: copy #[]
 
-    foreach word spec [
+    for-each word spec [
         if all [
             word? :word
             value? :word
@@ -251,7 +284,7 @@ fold: func [
         series: next series
     ]
 
-    foreach value series [
+    for-each value series [
         out: do-fold out value
     ]
 ]

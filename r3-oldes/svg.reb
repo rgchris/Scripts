@@ -1,8 +1,8 @@
 Rebol [
     Title: "SVG Tools"
     Author: "Christopher Ross-Gill"
-    Date: 15-Feb-2026
-    Version: 0.4.3
+    Date: 25-Mar-2026
+    Version: 0.5.0
     File: %svg.reb
 
     Purpose: {
@@ -27,6 +27,9 @@ Rebol [
     ]
 
     History: [
+        0.5.0 25-Mar-2026
+        "Further formats reorganization; Some Filters, Text, and Animation improvements"
+
         0.4.3 15-Feb-2026
         "Add Tilted Linear Gradient"
 
@@ -103,7 +106,7 @@ Rebol [
     ]
 ]
 
-svg: make object! [
+svg: context [
     ; quickie number parsing
     ; number*: charset "-.0123456789eE"
 
@@ -127,6 +130,17 @@ svg: make object! [
 
     lower-alpha*: charset [
         #"a" - #"z"
+    ]
+
+    ; url-safe*: charset [
+    ;     #"A" - #"Z"
+    ;     "!#$%&*+,-./:;=?@^^_|~"
+    ;     ; unicode chars here?
+    ; ]
+
+    url-safe*: complement charset [
+        0 - 32
+        {"'()<>[]{}}
     ]
 
     space*: [
@@ -162,6 +176,23 @@ svg: make object! [
     number*: [
         opt [#"+" | #"-"]
         unsigned*
+    ]
+
+    word*: [
+        lower-alpha*
+        some [
+            some lower-alpha*
+            |
+            digit*
+            |
+            #"-"
+        ]
+    ]
+
+    url*: [
+        word*
+        #":"
+        some url-safe*
     ]
 
     fail-mark: _
@@ -245,12 +276,22 @@ svg: make object! [
 
         encode: func [
             value [number!]
-            /precision
-            scale
+            /with options [map!]
+            /local precision
         ][
-            if precision [
-                value: round/to value scale
-                ;@@ should this take PERCENT! into account?
+            if all [
+                map? options
+                number? precision: options/precision
+            ][
+                value: either percent? value [
+                    either percent? precision [
+                        round/to value precision
+                    ][
+                        round/to value to percent! precision / 100
+                    ]
+                ][
+                    round/to value precision
+                ]
             ]
 
             switch type-of value [
@@ -1155,7 +1196,7 @@ svg: make object! [
         ][
             params: copy params
 
-            foreach param switch command [
+            for-each param switch command [
                 vline hline [
                     [1]
                 ]
@@ -1185,14 +1226,21 @@ svg: make object! [
 
         encode: func [
             path [block!]
-            /precise
-            precision [number!]
+            /with
+            options [map!]
 
             /local
-            out prep emit command params value type last offset origin
+            precision out prep emit command params value type last offset origin
         ][
-            precision: any [
-                precision default-precision
+            options: any [
+                options
+                copy #[]
+            ]
+            
+            precision:
+            options/precision: any [
+                options/precision
+                default-precision
             ]
 
             offset:
@@ -1205,7 +1253,7 @@ svg: make object! [
             prep: func [
                 value [integer! decimal!]
             ][
-                value: numbers/encode/precision value precision
+                value: numbers/encode/with value options
 
                 case [
                     ; can always append negative numbers without padding
@@ -1234,7 +1282,7 @@ svg: make object! [
 
             emit: func [values] [
                 append out collect [
-                    foreach value reduce values [
+                    for-each value reduce values [
                         switch type-of value [
                             #(char!) [
                                 keep value
@@ -1277,7 +1325,7 @@ svg: make object! [
                 ]
             ]
 
-            foreach [command params] path [
+            for-each [command params] path [
                 ; note that ENCODE creates an SVG path with relative coordinates
 
                 if not command == 'close [
@@ -1368,7 +1416,7 @@ svg: make object! [
         ]
     ]
 
-    lists: make object! [
+    lists: context [
         decode: func [
             list [string!]
             /local part
@@ -1395,47 +1443,47 @@ svg: make object! [
 
         encode: func [
             list [block! paren!]
-            /with-comma
+            /with
+            options [map!]
+            /comma
         ][
-            with-comma: either with-comma [#","] [#" "]
+            comma: either comma [#","] [#" "]
 
-            rejoin back change collect [
-                forall list [
-                    keep with-comma
+            rejoin back change collect-all list [
+                keep comma
 
-                    keep case [
-                        number? list/1 [
-                            numbers/encode list/1
-                        ]
+                keep switch/default type-of list/1 [
+                    #(integer!)
+                    #(decimal!)
+                    #(percent!) [
+                        numbers/encode/:with list/1 options
+                    ]
 
-                        issue? list/1 [
-                            sanitize mold list/1
-                        ]
+                    #(issue!) [
+                        sanitize mold list/1
+                    ]
 
-                        none? list/1 [
-                            do make error! rejoin [
-                                "Should not be NONE! here: " mold list
-                            ]
-                        ]
-
-                        pair? list/1 [
-                            reduce [
-                                numbers/encode list/1/x
-                                with-comma
-                                numbers/encode list/1/y
-                            ]
-                        ]
-
-                        #else [
-                            sanitize form list/1
+                    #(none!) [
+                        do make error! rejoin [
+                            "Should not be NONE! here: " mold list
                         ]
                     ]
+
+                    #(pair!) [
+                        reduce [
+                            numbers/encode/:with list/1/x options
+                            comma
+                            numbers/encode/:with list/1/y options
+                        ]
+                    ]
+                ][
+                    sanitize form list/1
                 ]
             ] ""
         ]
     ]
 
-    paint: make object! [
+    paint: context [
         named: #[
             black: 0.0.0
             navy: 0.0.128
@@ -1586,18 +1634,69 @@ svg: make object! [
             white: 255.255.255
         ]
 
-        from-hex: func [
-            encoded [issue!]
-        ][
-            encoded: to string! encoded
+        hex: context [
+            decode: func [
+                encoded [issue!]
+            ][
+                encoded: to string! encoded
 
-            if 3 == length-of encoded [
-                encoded: rejoin [
-                    encoded/1 encoded/1 encoded/2 encoded/2 encoded/3 encoded/3
+                if 3 == length-of encoded [
+                    encoded: rejoin [
+                        encoded/1 encoded/1 encoded/2 encoded/2 encoded/3 encoded/3
+                    ]
                 ]
+
+                to tuple! debase encoded 16
             ]
 
-            to tuple! debase encoded 16
+            encode: func [
+                color [tuple!]
+                /local r g b
+            ][
+                assert [
+                    3 = length-of color
+                ]
+
+                either parse color: form to-hex color [
+                    set r skip
+                    r
+                    set g skip
+                    g
+                    set b skip
+                    b
+                ][
+                    to issue! lowercase rejoin [
+                        r g b
+                    ]
+                ][
+                    to issue! lowercase color
+                ]
+            ]
+        ]
+
+        as-color: func [
+            color [string! tuple! issue! word!]
+        ][
+            switch type-of color [
+                #(string!) [
+                    decode color
+                ]
+
+                #(tuple!) [
+                    color
+                ]
+
+                #(issue!) [
+                    hex/decode color
+                ]
+
+                #(word!) [
+                    any [
+                        select named color
+                        do make error! join "Unknown color: " uppercase form color
+                    ]
+                ]
+            ]
         ]
 
         decode: func [
@@ -1625,7 +1724,7 @@ svg: make object! [
                     ]
                 ]
                 end
-                (value: from-hex load value)
+                (value: hex/decode load value)
                 |
                 "rgb("
                 copy value [
@@ -1642,14 +1741,30 @@ svg: make object! [
                         to tuple! lists/decode value
                     ]
                 )
-                ; |  ; handle-URL
-                ; "url(" ")"
+                |
+                "url("
+                any space*
+                [
+                    #"#"
+                    copy value word*
+                    (value: to issue! value)
+                    |
+                    copy value url*
+                    (value: to url! value)
+                    |
+                    fail
+                ]
+                any space*
+                ")"
+                end
             ][
-                if tuple? value [
-                    foreach name words-of named [
-                        if named/:name == value [
-                            value: name
-                            break
+                switch type-of value [
+                    #(tuple!) [
+                        for-each [name color] named [
+                            if value == color [
+                                value: name
+                                break
+                            ]
                         ]
                     ]
                 ]
@@ -1661,70 +1776,48 @@ svg: make object! [
             ]
         ]
 
-        ; are these significantly different?
-        ;
-        decode-from-style: func [
-            encoded [string!]
-            /local value
-        ][
-            either parse/case encoded [
-                ["transparent" | "none"]
-                end
-                (value: 'none)
-                |
-                copy value [
-                    some lower-alpha*
-                ]
-                end
-                (
-                    value: to word! value
-                    tuple? select named value
-                )
-                |
-                copy value [
-                    "#" [
-                        8 hex* | 6 hex* | 3 hex*
-                    ]
-                ]
-                end
-                (value: from-hex load value)
-                |
-                "rgb(" copy part to ")" skip
-                (value: to tuple! lists/decode part)
-            ][
-                value
-            ][
-                ; probe encoded
-                black
-            ]
-        ]
-
         encode: func [
             value [tuple!]
+            /with
+            options [map!]
         ][
-            case [
-                3 = length-of value [
-                    rejoin [
-                        "rgb(" value/1 #"," value/2 #"," value/3 #")"
+            any [
+                options
+                options: #[]
+            ]
+
+            switch length-of value [
+                3 [
+                    either options/hex-colors? [
+                        mold hex/encode value
+                    ][
+                        rejoin [
+                            "rgb("
+                            value/1 #"," value/2 #"," value/3
+                            #")"
+                        ]
                     ]
                 ]
 
-                4 = length-of value [
+                4 [
                     rejoin [
-                        "rgba(" value/1 #"," value/2 #"," value/3 #"," numbers/encode value/4 / 256 #")"
+                        "rgba("
+                        value/1 #"," value/2 #"," value/3 #","
+                        numbers/encode/with value/4 / 256 options
+                        #")"
                     ]
                 ]
             ]
         ]
     ]
 
-    transforms: make object! [
+    transforms: context [
         ; experimental, unfinished
         ; would be nice to support TRANSFORM attribute *and* a general ability
         ; to arbitrarily transform shapes, e.g. move shape 100x100 or resize shape 150%
         ; https://stackoverflow.com/questions/5149301/baking-transforms-into-svg-path-element-commands
         ;
-        apply: func [
+        bake: func [
             point [pair! block!]
             matrix [block!]
         ][
@@ -1762,6 +1855,101 @@ svg: make object! [
             ]
         ]
 
+        flatten: func [
+            value [block!]
+            /local args
+        ][
+            value: collect-each part value [
+                switch/default type-of part [
+                    #(word!) #(integer!) #(decimal!) [
+                        keep part
+                    ]
+
+                    #(pair!) [
+                        keep part/x
+                        keep part/y
+                    ]
+
+                    #(block!) #(paren!) [
+                        for-each part part [
+                            switch/default type-of part [
+                                #(integer!) #(decimal!) [
+                                    keep value
+                                ]
+
+                                #(pair!) [
+                                    keep part/x
+                                    keep part/y
+                                ]
+                            ][
+                                keep _
+                            ]
+                        ]
+                    ]
+                ][
+                    keep _
+                ]
+            ]
+
+            collect [
+                parse value [
+                    any [
+                        'matrix
+                        copy args 6 [integer! | decimal!]
+                        (
+                            keep 'matrix
+                            keep/only args
+                        )
+                        |
+                        'translate
+                        copy args 1 2 [integer! | decimal!]
+                        (
+                            keep 'translate
+                            keep/only args
+                        )
+                        |
+                        'scale
+                        copy args 1 2 [integer! | decimal!]
+                        (
+                            keep 'scale
+                            keep/only args
+                        )
+                        |
+                        'rotate
+                        copy args [
+                            [integer! | decimal!]
+                            opt [
+                                2 [integer! | decimal!]
+                            ]
+                        ]
+                        (
+                            keep 'rotate
+                            keep/only args
+                        )
+                        |
+                        'skewX
+                        copy args [integer! | decimal!]
+                        (
+                            keep 'skewX
+                            keep/only args
+                        )
+                        |
+                        'skewY
+                        copy args [integer! | decimal!]
+                        (
+                            keep 'skewY
+                            keep/only args
+                        )
+                    ]
+                ]
+                [
+                    end
+                    |
+                    (do make error! "Could not parse TRANSFORM list")
+                ]
+            ]
+        ]
+
         decode: func [
             encoded [string!]
             /local type part value
@@ -1776,10 +1964,11 @@ svg: make object! [
                         opt space*
                         "(" copy part to ")"
                         skip
-                        opt comma*  ; shouldn't accept trailing commas, but -- oh well..
+                        opt comma*
+                        ; shouldn't accept trailing commas, but -- oh well..
                         (
                             keep to word! type
-                            keep/only to paren! lists/decode part
+                            keep lists/decode part
                         )
                     ]
 
@@ -1788,15 +1977,19 @@ svg: make object! [
             ]
 
             if not empty? value [
-                neaten/pairs value
+                neaten/words value
             ]
         ]
 
         encode: func [
             value [block!]
+            /with
+            options [map!]
             /local part
         ][
-            lists/encode/with-comma collect [
+            value: flatten value
+
+            lists/encode collect [
                 parse value [
                     some [
                         copy part [
@@ -1806,7 +1999,7 @@ svg: make object! [
                         ]
                         (
                             keep rejoin [
-                                form part/1 "(" lists/encode/with-comma part/2 ")"
+                                form part/1 "(" lists/encode/:with/comma part/2 options ")"
                             ]
                         )
                     ]
@@ -1815,7 +2008,7 @@ svg: make object! [
         ]
     ]
 
-    font-names: make object! [
+    font-names: context [
         decode: func [
             encoding [string!]
             /local name
@@ -1827,7 +2020,7 @@ svg: make object! [
                             copy name [
                                 some name*
                                 any [
-                                    " "
+                                    #" "
                                     some name*
                                 ]
                             ]
@@ -1845,7 +2038,7 @@ svg: make object! [
                             copy name some [
                                 some name*
                                 |
-                                " " | "," | "'"
+                                #" " | #"," | #"'"
                             ]
                             #"^""
                             |
@@ -1872,7 +2065,7 @@ svg: make object! [
         ]
     ]
 
-    styles: make object! [
+    styles: context [
         delimiters: charset ":;"
 
         decode: func [
@@ -1886,7 +2079,7 @@ svg: make object! [
             ]
 
             neaten/pairs collect [
-                foreach [key value] encoded [
+                for-each [key value] encoded [
                     keep to word! trim/head/tail key
                     keep trim/head/tail value
                 ]
@@ -1894,12 +2087,12 @@ svg: make object! [
         ]
     ]
 
-    classes: make object! [
+    classes: context [
         decode: func [
             encoded [string!]
         ][
             collect [
-                foreach part split trim encoded #" " [
+                for-each part split trim encoded #" " [
                     if not empty? part [
                         attempt [
                             keep to word! part
@@ -1911,203 +2104,389 @@ svg: make object! [
         ]
     ]
 
-    decoder: context [
-        handle-attributes: func [
-            node [object!]
+    attributes: context [
+        decode: func [
+            attribute [word! none!]
+            value [string!]
 
-            /local attributes attribute name handler value style part
+            /local name handler style part
         ][
-            attributes: collect [
-                ; Should support these
-                ; https://developer.mozilla.org/en-US/docs/Web/SVG/Attribute/Presentation
-                ;
-                foreach attribute node/attributes [
-                    name: keep either attribute/space [
-                        to word! rejoin [
+            ; Should support these
+            ; https://developer.mozilla.org/en-US/docs/Web/SVG/Attribute/Presentation
+            ;
+            switch/default attribute [
+                viewbox [
+                    if all [
+                        value: lists/decode value
+
+                        parse value [
+                            4 integer!
+                        ]
+                    ][
+                        value
+                    ]
+                ]
+
+                id [
+                    to issue! replace/all value #" " #"_"
+                ]
+
+                class [
+                    classes/decode value
+                ]
+
+                fill
+                stroke
+                stop-color
+                flood-color [
+                    paint/decode value
+                ]
+
+                d [
+                    paths/decode value
+                ]
+
+                points [
+                    lists/decode value
+                ]
+
+                x x1 x2 y y1 y2 z
+                cx cy
+                dx dy
+                fr fx fy
+                r rx ry
+                width height
+                offset rotate scale begin dur end
+                stroke-width stroke-miterlimit [
+                    any [
+                        is-value-from value [
+                            "auto"
+                        ]
+
+                        numbers/from-unit value
+                    ]
+                ]
+
+                fill-rule clip-rule [
+                    is-value-from value [
+                        "nonzero" "evenodd"
+                    ]
+                ]
+
+                stroke-dasharray [
+                    either "none" = value [
+                        'none
+                    ][
+                        lists/decode value
+                    ]
+                ]
+
+                stroke-linecap [
+                    is-value-from value [
+                        "butt" "round" "square"
+                    ]
+                ]
+
+                stroke-linejoin [
+                    is-value-from value [
+                        "arcs" "bevel" "miter" "miter-clip" "round"
+                    ]
+                ]
+
+                font-family [
+                    font-names/decode value
+                ]
+
+                font-size [
+                    any [
+                        is-value-from value [
+                            "xx-small" "x-small" "small" "medium" "large" "x-large" "xx-large" "xxx-large"
+                            "larger" "smaller"
+                        ]
+
+                        numbers/from-unit value
+                    ]
+                ]
+
+                font-style [
+                    is-value-from value [
+                        "normal" "italic" "oblique"
+                    ]
+                ]
+
+                font-weight [
+                    is-value-from value [
+                        "normal" "bold" "lighter" "bolder"
+                        "100" "200" "300" "400" "500" "600" "700" "800" "900"
+                    ]
+                ]
+
+                text-anchor [
+                    is-value-from value [
+                        "start" "middle" "end"
+                    ]
+                ]
+
+                transform [
+                    transforms/decode value
+                ]
+
+                href [
+                    case [
+                        find/match value #"#" [
+                            to issue! next value
+                        ]
+
+                        find attribute/value #":" [
+                            to url! value
+                        ]
+
+                        #else [
+                            to file! value
+                        ]
+                    ]
+                ]
+
+                cursor [
+                    is-value-from value [
+                        "auto" "crosshair" "default" "pointer" "move" "text" "wait" "help"
+                        "e-resize" "ne-resize" "nw-resize" "n-resize"
+                        "se-resize" "sw-resize" "s-resize" "w-resize"
+                    ]
+                ]
+
+                display [
+                    is-value-from value [
+                        "contents" "none"
+                    ]
+                ]
+
+                visible [
+                    is-value-from value [
+                        "visible" "hidden" "collapse"
+                    ]
+                ]
+
+                ; ; messy, but needs to be supported
+                ; clip-path
+                ; https://developer.mozilla.org/en-US/docs/Web/SVG/Reference/Element/clipPath
+
+                ; ; would set 'currentcolor parameter somewhere
+                ; color
+
+                opacity
+                stroke-opacity
+                fill-opacity [
+                    numbers/from-unit value
+                ]
+
+                ; ; urls
+                ; filter mask
+
+                pointer-events [
+                    is-value-from value [
+                        "bounding-box" "visible" "painted" "fill" "stroke" "all" "none"
+                        "visiblePainted" "visibleFill" "visibleStroke"
+                    ]
+                ]
+
+                in in2 result [
+                    to ref! value
+                ]
+
+                k1 k2 k3 k4 [
+                    to integer! value
+                ]
+
+                mode [
+                    is-value-from value [
+                        "normal" "darken" "multiply" "color-burn" "lighten" "screen"
+                        "color-dodge" "overlay" "soft-light" "hard-light" "difference"
+                        "exclusion" "hue" "saturation" "color" "luminosity"
+                    ]
+                ]
+
+                style [
+                    styles/decode value
+                ]
+            ][
+                any [
+                    attempt [
+                        load value
+                    ]
+
+                    value
+                ]
+            ]
+        ]
+
+        encode: func [
+            attribute [word! none!]
+            value
+            /with
+            options [map!]
+        ][
+            options: any [
+                options
+                #[]
+            ]
+
+            switch/default type-of value [
+                #(decimal!) [
+                    switch/default attribute [
+                        x x1 x2
+                        y y1 y2
+                        cx cy
+                        dx dy
+                        r rx ry
+                        fr fx fy
+                        width height [
+                            numbers/encode/with value options
+                        ]
+
+                        begin end dur [
+                            join numbers/encode/with value options "s"
+                        ]
+
+                        version [
+                            form value
+                        ]
+                    ][
+                        numbers/encode/with value options
+                    ]
+                ]
+
+                #(integer!) [
+                    value: either all [
+                        integer? options/precision
+                    ][
+                        numbers/encode/with value options
+                    ][
+                        form value
+                    ]
+
+                    switch/default attribute [
+                        begin end dur [
+                            join value #"s"
+                        ]
+                    ][
+                        value
+                    ]
+                ]
+
+                #(tuple!) [
+                    paint/encode/with value options
+                ]
+
+                #(issue!) [
+                    switch/default attribute [
+                        id [
+                            to string! value
+                        ]
+
+                        href [
+                            mold value
+                        ]
+                    ][
+                        either parse form value [
+                            8 hex* | 6 hex* | 3 hex*
+                        ][
+                            paint/encode/with paint/hex/decode value options
+                        ][
+                            rejoin [
+                                "url(#" form value ")"
+                            ]
+                        ]
+                    ]
+                ]
+
+                #(url!) [
+                    either find/match value "id:#" [
+                        encode attribute to tuple! skip value 3 options
+                    ][
+                        form value
+                    ]
+                ]
+
+                #(block!) [
+                    ; path & transform attributes; others?
+                    ;
+                    case [
+                        'd = attribute [
+                            paths/encode/with value options
+                        ]
+
+                        ; 'animate = name []
+                        ; should handle here but not sure how
+
+                        parse value [
+                            some [
+                                ['matrix | 'translate | 'scale | 'rotate | 'skewX | 'skewY]
+                                [
+                                    into [
+                                        some [integer! | decimal! | pair!]
+                                    ]
+                                    |
+                                    some [integer! | decimal! | pair!]
+                                ]
+                            ]
+                        ][
+                            transforms/encode/with value options
+                        ]
+
+                        #else [
+                            lists/encode/comma/:with value options
+                        ]
+                    ]
+                ]
+
+                #(percent!) [
+                    numbers/encode/with value options
+                ]
+
+                #(time!) [
+                    join numbers/encode/with to decimal! value options #"s"
+                ]
+
+                #(pair!) [
+                    reform [
+                        numbers/encode/with value/x options
+                        numbers/encode/with value/y options
+                    ]
+                ]
+            ][
+                ; probe attribute
+                form value
+            ]
+        ]
+
+        from-node: func [
+            node [object!]
+            /local attributes name
+        ][
+            attributes: copy #[]
+
+            for-each attribute node/attributes [
+                case [
+                    attributes/space [
+                        name: to word! rejoin [
                             form attribute/space
                             #"|"
                             form attribute/name
                         ]
-                    ][
-                        to word! to string! attribute/name
+
+                        put attributes name decode name attribute/value
                     ]
 
-                    keep/only switch/default name [
-                        viewbox [
-                            if all [
-                                value: lists/decode attribute/value
+                    @values = attribute/name [
+                        ; special handling for values attribute
+                        ; to follow
+                    ]
 
-                                parse value [
-                                    4 integer!
-                                ]
-                            ][
-                                value
-                            ]
-                        ]
+                    #else [
+                        name: to word! to string! attribute/name
 
-                        id [
-                            to issue! replace/all attribute/value #" " #"_"
-                        ]
-
-                        class [
-                            classes/decode attribute/value
-                        ]
-
-                        fill stroke stop-color [
-                            paint/decode attribute/value
-                        ]
-
-                        d [
-                            paths/decode attribute/value
-                        ]
-
-                        points [
-                            lists/decode attribute/value
-                        ]
-
-                        cx cy dx dy fr fx fy r rx ry x x1 x2 y y1 y2 z
-                        width height offset rotate scale
-                        stroke-width stroke-miterlimit [
-                            any [
-                                is-value-from attribute/value [
-                                    "auto"
-                                ]
-
-                                numbers/from-unit attribute/value
-                            ]
-                        ]
-
-                        fill-rule clip-rule [
-                            is-value-from attribute/value [
-                                "nonzero" "evenodd"
-                            ]
-                        ]
-
-                        stroke-dasharray [
-                            either attribute/value = "none" [
-                                _
-                            ][
-                                lists/decode attribute/value
-                            ]
-                        ]
-
-                        stroke-linecap [
-                            is-value-from attribute/value [
-                                "butt" "round" "square"
-                            ]
-                        ]
-
-                        stroke-linejoin [
-                            is-value-from attribute/value [
-                                "arcs" "bevel" "miter" "miter-clip" "round"
-                            ]
-                        ]
-
-                        font-size [
-                            any [
-                                is-value-from attribute/value [
-                                    "xx-small" "x-small" "small" "medium" "large" "x-large" "xx-large" "xxx-large"
-                                    "larger" "smaller"
-                                ]
-
-                                numbers/from-unit attribute/value
-                            ]
-                        ]
-
-                        font-family [
-                            font-names/decode attribute/value
-                        ]
-
-                        font-style [
-                            is-value-from attribute/value [
-                                "normal" "italic" "oblique"
-                            ]
-                        ]
-
-                        font-weight [
-                            is-value-from attribute/value [
-                                "normal" "bold" "lighter" "bolder"
-                                "100" "200" "300" "400" "500" "600" "700" "800" "900"
-                            ]
-                        ]
-
-                        text-anchor [
-                            is-value-from attribute/value [
-                                "start" "middle" "end"
-                            ]
-                        ]
-
-                        transform [
-                            transforms/decode attribute/value
-                        ]
-
-                        href [
-                            case [
-                                find/match attribute/value #"#" [
-                                    to issue! next attribute/value
-                                ]
-
-                                find attribute/value #":" [
-                                    to url! attribute/value
-                                ]
-
-                                <else> [
-                                    to file! attribute/value
-                                ]
-                            ]
-                        ]
-
-                        cursor [
-                            is-value-from attribute/value [
-                                "auto" "crosshair" "default" "pointer" "move" "text" "wait" "help"
-                                "e-resize" "ne-resize" "nw-resize" "n-resize"
-                                "se-resize" "sw-resize" "s-resize" "w-resize"
-                            ]
-                        ]
-
-                        display [
-                            is-value-from attribute/value [
-                                "contents" "none"
-                            ]
-                        ]
-
-                        visible [
-                            is-value-from attribute/value [
-                                "visible" "hidden" "collapse"
-                            ]
-                        ]
-
-                        ; ; messy, but needs to be supported
-                        ; clip-path
-
-                        ; ; would set 'currentcolor parameter somewhere
-                        ; color
-
-                        opacity stroke-opacity fill-opacity [
-                            numbers/from-unit attribute/value
-                        ]
-
-                        ; ; urls
-                        ; filter mask
-
-                        pointer-events [
-                            is-value-from attribute/value [
-                                "bounding-box" "visible" "painted" "fill" "stroke" "all" "none"
-                                "visiblePainted" "visibleFill" "visibleStroke"
-                            ]
-                        ]
-
-                        style [
-                            styles/decode attribute/value
-                        ]
-                    ][
-                        any [
-                            attempt [
-                                load attribute/value
-                            ]
-
-                            attribute/value
-                        ]
+                        put attributes name decode name attribute/value
                     ]
                 ]
             ]
@@ -2116,227 +2495,121 @@ svg: make object! [
                 ; Style attributes have greater precedence:
                 ; https://www.w3.org/TR/2008/REC-CSS2-20080411/cascade.html#q12
                 ;
-                foreach [attribute value] attributes/style [
-                    if value: switch/default attribute [
-                        ; this is largely a repeat of the above, need to hang out to DRY.
-
-                        fill stroke [
-                            paint/decode-from-style value
-                        ]
-
-                        stroke-dasharray [
-                            lists/decode value
-                        ]
-
-                        stroke-width stroke-miterlimit font-size [
-                            numbers/from-unit value
-                        ]
-
-                        fill-rule clip-rule [
-                            is-value-from value [
-                                "nonzero" "evenodd"
-                            ]
-                        ]
-
-                        stroke-linecap [
-                            is-value-from value [
-                                "butt" "round" "square"
-                            ]
-                        ]
-
-                        stroke-linejoin [
-                            is-value-from value [
-                                "arcs" "bevel" "miter" "miter-clip" "round"
-                            ]
-                        ]
-
-                        font-family [
-                            font-names/decode value
-                        ]
-
-                        font-size [
-                            any [
-                                is-value-from value [
-                                    "xx-small" "x-small" "small" "medium" "large" "x-large" "xx-large" "xxx-large"
-                                    "larger" "smaller"
-                                ]
-
-                                numbers/from-unit value
-                            ]
-                        ]
-
-                        font-style [
-                            is-value-from value [
-                                "normal" "italic" "oblique"
-                            ]
-                        ]
-
-                        font-weight [
-                            is-value-from value [
-                                "normal" "bold" "lighter" "bolder"
-                                "100" "200" "300" "400" "500" "600" "700" "800" "900"
-                            ]
-                        ]
-
-                        text-anchor [
-                            is-value-from value [
-                                "start" "middle" "end"
-                            ]
-                        ]
-
-                        transform [
-                            transforms/decode value
-                        ]
-                    ][
-                        value
-                    ][
-                        remove/part find/skip attributes/style attribute 2 2
-                        put attributes attribute value
-                    ]
+                for-each [name value] attributes/style [
+                    put attributes name decode name value
                 ]
 
-                if empty? attributes/style [
-                    remove/part find/skip attributes 'style 2 2
-                ]
+                remove/key attributes 'style
             ]
 
             either empty? attributes [
                 _
             ][
-                make map! attributes
+                attributes
             ]
         ]
+    ]
 
+    decoder: context [
         open-tags: _
 
-        handle-kid: func [
+        kids-from: func [
             node [object!]
-            /local attributes kids kid
+            /local kids text
         ][
-            neaten/words/force collect [
-                keep switch/default node/name [
-                    <g> [
-                        'group
-                    ]
-                ][
-                    to word! to string! node/name
-                ]
+            if not empty? kids: node/children [
+                neaten/triplets collect-all kids [
+                    switch/default type-of kids/1/name [
+                        #(tag!) [
+                            insert open-tags kids/1/name
 
-                keep/only attributes: handle-attributes node
-
-                keep/only either empty? kids: neaten/triplets collect [
-                    kids: node/children
-
-                    while [
-                        not tail? kids
-                    ][
-                        kid: kids/1
-
-                        switch/default type-of kid/name [
-                            #(tag!) [
-                                insert open-tags kid/name
-                                keep handle-kid kid
-                                remove open-tags
-                            ]
-
-                            #(file!) [
-                                keep quote 'text
-                                keep _
-                                keep either node/name = 'text [
-                                    kid: copy kid/value
-
-                                    if head? kids [
-                                        trim/head kid
-                                    ]
-
-                                    if tail? next kids [
-                                        trim/tail kid
-                                    ]
-
-                                    kid
-                                ][
-                                    copy kid/value
+                            keep switch/default kids/1/name [
+                                <g> [
+                                    'group
                                 ]
+                            ][
+                                to word! to string! kids/1/name
                             ]
 
-                            ; what even is this?
-                            ;
-                            other [
-                                if all [
-                                    find open-tags 'text
-                                    not head? kids
-                                    not tail? next kids
-                                ][
-                                    keep quote 'text
-                                    keep _
-                                    keep #" "
-                                ]
-                            ]
-                        ][
-                            probe kids/1/name
+                            keep attributes/from-node kids/1
+                            keep/only kids-from kids/1
+
+                            remove open-tags
                         ]
 
-                        kids: next kids
+                        #(file!) [
+                            keep quote 'text
+                            keep _
+                            keep either 'text = kids/1/name [
+                                text: copy kids/1/value
+
+                                if head? kids [
+                                    trim/head text
+                                ]
+
+                                if tail? next kids [
+                                    trim/tail text
+                                ]
+
+                                text
+                            ][
+                                copy kids/1/value
+                            ]
+                        ]
+
+                        ; what even is this?
+                        ;
+                        other [
+                            if all [
+                                find open-tags 'text
+                                not head? kids
+                                not tail? next kids
+                            ][
+                                keep quote 'text
+                                keep _
+                                keep #" "
+                            ]
+                        ]
+                    ][
+                        probe kids/1/name
+                        ; should not happen
                     ]
-                ][
-                    _
-                ][
-                    kids
                 ]
             ]
         ]
 
         decode: func [
-            svg [string! binary!]
-            /local kid kids desc defs
+            encoding [string! binary!]
+            /local document kids
         ][
             case/all [
-                binary? svg [
-                    svg: to string! svg
+                binary? encoding [
+                    encoding: to string! encoding
                 ]
 
-                string? svg [
-                    svg: load-xml/dom svg
-                    ; probe svg/as-block
+                string? encoding [
+                    document: load-xml/dom encoding
                 ]
             ]
 
             open-tags: make block! 8
 
-            neaten/words/force collect [
-                keep 'svg
-                keep/only handle-attributes svg
-
-                keep/only either empty? kids: collect [
-                    foreach kid svg/children [
-                        if tag? kid/name [
-                            insert open-tags kid/name
-                            ; switch/default kid/name [
-                            ;     ; defs [defs: handle-defs kid]
-                            ;     desc [desc: kid/text]
-                            ; ][
-                                keep handle-kid kid
-                            ; ]
-                            remove open-tags
-                        ]
-                    ]
-                ][
-                    _
-                ][
-                    kids
-                ]
+            neaten/triplets compose/only [
+                svg
+                (attributes/from-node document)
+                (kids-from document)
             ]
         ]
     ]
 
     decode: :decoder/decode
 
-    creator: make object! [
+    creator: context [
         presentation-attributes: #[
             fill _
             stroke _
-            id _
             class _
+            filter _
             stop-color _
             rotate _
             scale _
@@ -2351,15 +2624,19 @@ svg: make object! [
             font-family _
             font-style _
             font-weight _
+            letter-spacing _
+            dominant-baseline _
             text-anchor _
             transform _
-            href _
+            transform-origin _
             cursor _
             display _
             visible _
             opacity _
             stroke-opacity _
             fill-opacity _
+            id _
+            href _
         ]
 
         do-attributes: func [
@@ -2369,7 +2646,7 @@ svg: make object! [
             case [
                 none? attributes _
                 empty? attributes _
-                empty? attributes: intersect attributes presentation-attributes _
+                empty? attributes: compose/deep intersect attributes presentation-attributes _
 
                 #else [
                     node/2: either map? node/2 [
@@ -2385,10 +2662,15 @@ svg: make object! [
         tilt: func [
             center [pair!]
             angle [number!]
-            length [integer! decimal!]
+            length [integer! decimal! percent!]
         ][
-            center: center / 100
-            length: length / 200 * as-pair cosine angle sine angle
+            if percent? length [
+                length: 100 * length
+                ; assuming here that other coords here are * 100
+            ]
+
+            ; center: center
+            length: length / 2 * as-pair cosine angle sine angle
 
             reduce [
                 as-pair center/x - length/x center/y - length/y
@@ -2396,22 +2678,20 @@ svg: make object! [
             ]
         ]
 
-        to-color: func [
-            color [tuple! word! issue!]
+        append-to: func [
+            project [map!]
+            node [block!]
         ][
-            switch type-of color [
-                #(tuple!) [
-                    paint/encode color
-                ]
+            also tail project/here
+            append project/here neaten/triplets node
+        ]
 
-                #(word!) [
-                    form color
-                ]
-
-                #(issue!) [
-                    paint/from-hex color
-                ]
-            ]
+        append-defs: func [
+            project [map!]
+            node [block!]
+        ][
+            also tail project/defs
+            append project/defs neaten/triplets node
         ]
 
         append-node: func [
@@ -2419,11 +2699,83 @@ svg: make object! [
             node [block!]
         ][
             also tail parent/3
-            append parent/3 neaten/first node
+            append parent/3 neaten/triplets node
         ]
 
-        add-rectangle: func [
-            container [block!]
+        make-group: func [
+            project [map!]
+            attributes [map! none!]
+            spec [block!]
+            /local here node
+        ][
+            node: compose/deep [
+                group #[] []
+            ]
+
+            do-attributes node attributes
+
+            here: project/here
+            project/here: node/3
+            do spec
+            project/here: here
+            node
+        ]
+
+        make-symbol: func [
+            project [map!]
+            id [issue!]
+            size [pair!]
+            spec [block!]
+            /at
+            offset [pair!]
+            /local here node
+        ][
+            node: compose/deep [
+                symbol #[
+                    id: (id)
+                    x: (if at [offset/x])
+                    y: (if at [offset/y])
+                    width: (size/x)
+                    height: (size/y)
+                    viewBox: [
+                        (either at [offset/x] [0])
+                        (either at [offset/y] [0])
+                        (size/x)
+                        (size/y)
+                    ]
+                ] []
+            ]
+
+            here: project/here
+            project/here: node/3
+            do spec
+            project/here: here
+            node
+        ]
+
+        make-anchor: func [
+            project [map!]
+            target [file! url! issue!]
+            attributes [map! none!]
+            spec [block!]
+            /local here node
+        ][
+            node: compose/deep [
+                a #[] []
+            ]
+
+            do-attributes node attributes
+
+            node/2/href: target
+
+            here: project/here
+            project/here: node/3
+            do spec
+            project/here: here
+            node
+        ]
+
+        make-rectangle: func [
             attributes [map! none!]
             offset [pair! block!]
             size [pair! block!]
@@ -2457,11 +2809,10 @@ svg: make object! [
 
             do-attributes node attributes
 
-            append-node container node
+            node
         ]
 
-        add-circle: func [
-            container [block!]
+        make-circle: func [
             attributes [map! none!]
             center [pair!]
             radius [number!]
@@ -2477,11 +2828,10 @@ svg: make object! [
 
             do-attributes node attributes
 
-            append-node container node
+            node
         ]
 
-        add-ellipse: func [
-            container [block!]
+        make-ellipse: func [
             attributes [map! none!]
             center [pair!]
             radius [pair!]
@@ -2498,11 +2848,10 @@ svg: make object! [
 
             do-attributes node attributes
 
-            append-node container node
+            node
         ]
 
-        add-image: func [
-            container [block!]
+        make-image: func [
             attributes [map! none!]
             target [url! file! issue!]
             offset [pair!]
@@ -2521,11 +2870,10 @@ svg: make object! [
 
             do-attributes node attributes
 
-            append-node container node
+            node
         ]
 
-        add-line: func [
-            container [block!]
+        make-line: func [
             attributes [map! none!]
             start [pair! block!]
             end [pair! block!]
@@ -2542,11 +2890,10 @@ svg: make object! [
 
             do-attributes node attributes
 
-            append-node container node
+            node
         ]
 
-        add-polyline: func [
-            container [block!]
+        make-polyline: func [
             attributes [map! none!]
             points [block!]
             /local node
@@ -2561,7 +2908,7 @@ svg: make object! [
                                 ]
                             ]
 
-                            foreach point reduce points [
+                            for-each point reduce points [
                                 keep point/x
                                 keep point/y
                             ]
@@ -2572,11 +2919,10 @@ svg: make object! [
 
             do-attributes node attributes
 
-            append-node container node
+            node
         ]
 
-        add-polygon: func [
-            container [block!]
+        make-polygon: func [
             attributes [map! none!]
             points [block!]
             /local node
@@ -2591,7 +2937,7 @@ svg: make object! [
                                 ]
                             ]
 
-                            foreach point reduce points [
+                            for-each point reduce points [
                                 keep point/x
                                 keep point/y
                             ]
@@ -2602,21 +2948,20 @@ svg: make object! [
 
             do-attributes node attributes
 
-            append-node container node
+            node
         ]
 
-        paths: make object! [
-            add-move: func [
-                path [block!]
+        paths: context [
+            path: _
+
+            move: func [
                 offset [map!]
                 target [pair!]
 
                 /local command
             ][
-                target: to pair! reduce [
-                    offset/x: target/x + offset/x
-                    offset/y: target/y + offset/y
-                ]
+                offset/x: target/x
+                offset/y: target/y
 
                 command: compose/deep [
                     move [
@@ -2624,28 +2969,25 @@ svg: make object! [
                     ]
                 ]
 
-                append path/2/d command
+                append path command
 
                 command
             ]
 
-            add-line: func [
-                path [block!]
+            line: func [
                 offset [map!]
                 target [pair!]
 
                 /local command
             ][
-                if empty? path/2/d [
-                    throw make error [
+                if empty? path [
+                    do make error! [
                         "SVG Path must begin with a MOVE command"
                     ]
                 ]
 
-                target: to pair! reduce [
-                    offset/x: target/x + offset/x
-                    offset/y: target/y + offset/y
-                ]
+                offset/x: target/x
+                offset/y: target/y
 
                 command: compose/deep [
                     line [
@@ -2653,26 +2995,24 @@ svg: make object! [
                     ]
                 ]
 
-                append path/2/d command
+                append path command
 
                 command
             ]
 
-            add-hline: func [
-                path [block!]
+            hline: func [
                 offset [map!]
                 target [number!]
 
                 /local command
             ][
-                if empty? path/2/d [
-                    throw make error [
+                if empty? path [
+                    do make error! [
                         "SVG Path must begin with a MOVE command"
                     ]
                 ]
 
-                target:
-                offset/x: target + offset/x
+                offset/x: target
 
                 command: compose/deep [
                     hline [
@@ -2680,25 +3020,24 @@ svg: make object! [
                     ]
                 ]
 
-                append path/2/d command
+                append path command
 
                 command
             ]
 
-            add-vline: func [
-                path [block!]
+            vline: func [
                 offset [map!]
                 target [number!]
+
                 /local command
             ][
-                if empty? path/2/d [
-                    throw make error [
+                if empty? path [
+                    do make error! [
                         "SVG Path must begin with a MOVE command"
                     ]
                 ]
 
-                target:
-                offset/y: target + offset/y
+                offset/y: target
 
                 command: compose/deep [
                     vline [
@@ -2706,13 +3045,12 @@ svg: make object! [
                     ]
                 ]
 
-                append path/2/d command
+                append path command
 
                 command
             ]
 
-            add-arc: func [
-                path [block!]
+            arc: func [
                 offset [map!]
                 radius [pair!]
                 angle [number!]
@@ -2721,14 +3059,14 @@ svg: make object! [
                 target [pair!]
                 /local command
             ][
-                if empty? path/2/d [
-                    throw make error [
+                if empty? path [
+                    do make error! [
                         "SVG Path must begin with a MOVE command"
                     ]
                 ]
 
-                offset/x: target/x: target/x + offset/x
-                offset/y: target/y: target/y + offset/y
+                offset/x: target/x
+                offset/y: target/y
 
                 command: compose/deep [
                     arc [
@@ -2736,33 +3074,26 @@ svg: make object! [
                     ]
                 ]
 
-                append path/2/d command
+                append path command
 
                 command
             ]
 
-            add-curve: func [
-                path [block!]
+            curve: func [
                 offset [map!]
                 control-1 [pair!]
                 control-2 [pair!]
                 target [pair!]
                 /local command
             ][
-                if empty? path/2/d [
-                    throw make error [
+                if empty? path [
+                    do make error! [
                         "SVG Path must begin with a MOVE command"
                     ]
                 ]
 
-                control-1/x: control-1/x + offset/x
-                control-1/y: control-1/y + offset/y
-
-                control-2/x: control-2/x + offset/x
-                control-2/y: control-2/y + offset/y
-
-                offset/x: target/x: target/x + offset/x
-                offset/y: target/y: target/y + offset/y
+                offset/x: target/x
+                offset/y: target/y
 
                 command: reduce [
                     'curve compose [
@@ -2770,29 +3101,25 @@ svg: make object! [
                     ]
                 ]
 
-                append path/2/d command
+                append path command
 
                 command
             ]
 
-            add-curv: func [
-                path [block!]
+            curv: func [
                 offset [map!]
                 control [pair!]
                 target [pair!]
                 /local command
             ][
-                if empty? path/2/d [
-                    throw make error [
+                if empty? path [
+                    do make error! [
                         "SVG Path must begin with a MOVE command"
                     ]
                 ]
 
-                control/x: control/x + offset/x
-                control/y: control/y + offset/y
-
-                offset/x: target/x: target/x + offset/x
-                offset/y: target/y: target/y + offset/y
+                offset/x: target/x
+                offset/y: target/y
 
                 command: reduce [
                     'curv compose [
@@ -2800,29 +3127,25 @@ svg: make object! [
                     ]
                 ]
 
-                append path/2/d command
+                append path command
 
                 command
             ]
 
-            add-qcurve: func [
-                path [block!]
+            qcurve: func [
                 offset [map!]
                 control [pair!]
                 target [pair!]
                 /local command
             ][
-                if empty? path/2/d [
-                    throw make error [
+                if empty? path [
+                    do make error! [
                         "SVG Path must begin with a MOVE command"
                     ]
                 ]
 
-                control/x: control/x + offset/x
-                control/y: control/y + offset/y
-
-                offset/x: target/x: target/x + offset/x
-                offset/y: target/y: target/y + offset/y
+                offset/x: target/x
+                offset/y: target/y
 
                 command: reduce [
                     'qcurve compose [
@@ -2830,25 +3153,24 @@ svg: make object! [
                     ]
                 ]
 
-                append path/2/d command
+                append path command
 
                 command
             ]
 
-            add-qcurv: func [
-                path [block!]
+            qcurv: func [
                 offset [map!]
                 target [pair!]
                 /local command
             ][
-                if empty? path/2/d [
-                    throw make error [
+                if empty? path [
+                    do make error! [
                         "SVG Path must begin with a MOVE command"
                     ]
                 ]
 
-                offset/x: target/x: target/x + offset/x
-                offset/y: target/y: target/y + offset/y
+                offset/x: target/x
+                offset/y: target/y
 
                 command: compose/deep [
                     qcurv [
@@ -2856,21 +3178,19 @@ svg: make object! [
                     ]
                 ]
 
-                append path/2/d command
+                append path command
 
                 command
             ]
 
-            add-close: func [
-                path [block!]
-            ][
-                if empty? path/2/d [
-                    do make error [
+            close: func [] [
+                if empty? path [
+                    do make error! [
                         "SVG Path must begin with a MOVE command"
                     ]
                 ]
 
-                append path/2/d reduce [
+                append path reduce [
                     'close make block! 0
                 ]
 
@@ -2878,11 +3198,11 @@ svg: make object! [
             ]
         ]
 
-        add-path: func [
-            container [block!]
+        make-path: func [
             attributes [map! none!]
-            commands [block!]
-            /local path node offset
+            commands [block! string!]
+
+            /local node offset
         ][
             node: compose/deep [
                 path #[
@@ -2890,113 +3210,371 @@ svg: make object! [
                 ] _
             ]
 
-            path: node/path/d
+            do-attributes node attributes
+
+            offset: copy #[
+                x: 0
+                y: 0
+            ]
+
+            either string? commands [
+                node/path/d: svg/paths/decode commands
+            ][
+                paths/path: node/path/d
+
+                do-with commands [
+                    large: yes
+                    small: no
+                    sweep: yes
+                    counter: no
+
+                    current-position: func [] [
+                        copy offset
+                    ]
+
+                    fixed: func [
+                        target [pair!]
+                    ][
+                        target
+                    ]
+
+                    by: func [
+                        target [pair!]
+                    ][
+                        target/x: target/x + offset/x
+                        target/y: target/y + offset/y
+
+                        target
+                    ]
+
+                    left-by: func [
+                        target [integer! decimal!]
+                    ][
+                        target: target + offset/x
+                    ]
+
+                    down-by: func [
+                        target [integer! decimal!]
+                    ][
+                        target: target + offset/y
+                    ]
+
+                    move: func [
+                        target [pair!]
+                    ][
+                        paths/move offset target
+                    ]
+
+                    line: func [
+                        target [pair!]
+                    ][
+                        paths/line offset target
+                    ]
+
+                    hline: func [
+                        target [number!]
+                    ][
+                        paths/hline offset target
+                    ]
+
+                    vline: func [
+                        target [number!]
+                    ][
+                        paths/vline offset target
+                    ]
+
+                    arc: func [
+                        radius [pair!]
+                        angle [number!]
+                        large-arc? [logic!]
+                        sweep? [logic!]
+                        target [pair!]
+                    ][
+                        paths/arc offset radius angle large-arc? sweep? target
+                    ]
+
+                    curve: func [
+                        control-1 [pair!]
+                        control-2 [pair!]
+                        target [pair!]
+                    ][
+                        paths/curve offset control-1 control-2 target
+                    ]
+
+                    curv: func [
+                        control [pair!]
+                        target [pair!]
+                    ][
+                        paths/curv offset control target
+                    ]
+
+                    qcurve: func [
+                        control [pair!]
+                        target [pair!]
+                    ][
+                        paths/qcurve offset control target
+                    ]
+
+                    qcurv: func [
+                        target [pair!]
+                    ][
+                        paths/qcurv offset target
+                    ]
+
+                    close: func [] [
+                        paths/close
+                    ]
+                ]
+
+                neaten/pairs paths/path
+                paths/path: _
+            ]
+
+            node
+        ]
+
+        make-span: func [
+            attributes [map! none!]
+            spec [block!]
+
+            /local node
+        ][
+            node: compose/deep [
+                tspan #[] []
+            ]
+
+            do-with spec [
+                span: _
+
+                at: func [
+                    value [integer! decimal! pair!]
+                ][
+                    either pair? value [
+                        node/2/x: value/x
+                        node/2/y: value/y
+
+                        value
+                    ][
+                        node/2/x: value
+                    ]
+                ]
+
+                across: func [
+                    value [integer! decimal!]
+                ][
+                    node/2/dx: value
+                ]
+
+                down: func [
+                    value [integer! decimal!]
+                ][
+                    node/2/dy: value
+                ]
+
+                left: func [] [
+                    node/2/text-anchor: 'start
+                ]
+
+                center: func [] [
+                    node/2/text-anchor: 'middle
+                ]
+
+                right: func [] [
+                    node/2/text-anchor: 'end
+                ]
+
+                baseline-at: func [
+                    value [integer! decimal!]
+                ][
+                    node/2/text-anchor: 'start
+                    node/2/x: value
+                ]
+
+                emit: func [
+                    text [any-string! char! pair! number!]
+                ][
+                    append-node node compose [
+                        'text _ (form text)
+                    ]
+                ]
+            ]
 
             do-attributes node attributes
 
-            offset: make map! [
-                x: 0 y: 0
-            ]
-
-            do-with commands [
-                large: yes
-                small: no
-                sweep: yes
-                counter: no
-
-                current-position: func [] [
-                    copy offset
-                ]
-
-                fixed: func [
-                    target [pair!]
-                ][
-                    target/x: target/x - offset/x
-                    target/y: target/y - offset/y
-
-                    target
-                ]
-
-                move: func [
-                    target [pair!]
-                ][
-                    paths/add-move node offset target
-                ]
-
-                line: func [
-                    target [pair!]
-                ][
-                    paths/add-line node offset target
-                ]
-
-                hline: func [
-                    target [number!]
-                ][
-                    paths/add-hline node offset target
-                ]
-
-                vline: func [
-                    target [number!]
-                ][
-                    paths/add-vline node offset target
-                ]
-
-                arc: func [
-                    radius [pair!]
-                    angle [number!]
-                    large-arc? [logic!]
-                    sweep? [logic!]
-                    target [pair!]
-                ][
-                    paths/add-arc node offset radius angle large-arc? sweep? target
-                ]
-
-                curve: func [
-                    control-1 [pair!]
-                    control-2 [pair!]
-                    target [pair!]
-                ][
-                    paths/add-curve node offset control-1 control-2 target
-                ]
-
-                curv: func [
-                    control [pair!]
-                    target [pair!]
-                ][
-                    paths/add-curv node offset control target
-                ]
-
-                qcurve: func [
-                    control [pair!]
-                    target [pair!]
-                ][
-                    paths/add-qcurve node offset control target
-                ]
-
-                qcurv: func [
-                    target [pair!]
-                ][
-                    paths/add-qcurv node offset target
-                ]
-
-                close: func [] [
-                    paths/add-close node
-                ]
-            ]
-
-            neaten/pairs node/2/d
-
-            append-node container node
+            node
         ]
 
-        add-linear-gradient: func [
-            document [block!]
+        make-text: func [
+            attributes [map! none!]
+            spec [block!]
+
+            /local node
+        ][
+            node: compose/deep [
+                text #[] []
+            ]
+
+            do-with spec [
+                at: func [
+                    value [integer! decimal! pair!]
+                ][
+                    either pair? value [
+                        node/2/x: value/x
+                        node/2/y: value/y
+
+                        value
+                    ][
+                        node/2/x: value
+                    ]
+                ]
+
+                across: func [
+                    value [integer! decimal!]
+                ][
+                    node/2/dx: value
+                ]
+
+                down: func [
+                    value [integer! decimal!]
+                ][
+                    node/2/dy: value
+                ]
+
+                left: func [] [
+                    node/2/text-anchor: 'start
+                ]
+
+                center: func [] [
+                    node/2/text-anchor: 'middle
+                ]
+
+                right: func [] [
+                    node/2/text-anchor: 'end
+                ]
+
+                baseline-at: func [
+                    value [integer! decimal!]
+                ][
+                    node/2/text-anchor: 'start
+                    node/2/x: value
+                ]
+
+                span: func [
+                    attributes [map! none!]
+                    spec [block!]
+                ][
+                    append-node node make-span attributes spec
+                ]
+
+                emit: func [
+                    text [any-string! char! pair! number!]
+                ][
+                    append-node node compose [
+                        'text _ (form text)
+                    ]
+                ]
+            ]
+
+            do-attributes node attributes
+
+            node
+        ]
+
+        make-use: func [
+            id [issue!]
+            offset [pair! none!]
+            attributes [map! none!]
+
+            /resize
+            size [pair!]
+
+            /local node
+        ][
+            node: compose/deep [
+                use #[
+                    x: (if offset [offset/x])
+                    y: (if offset [offset/y])
+                    width: (if resize [size/x])
+                    height: (if resize [size/y])
+                ] _
+            ]
+
+            do-attributes node attributes
+
+            node/2/href: id
+
+            node
+        ]
+
+        prep-for-placement: func [
+            attributes [map! none!]
+            target [block!]
+
+            /local node
+        ][
+            assert [
+                find [svg group] target/1
+            ]
+
+            node: compose/deep [
+                group #[] _
+            ]
+
+            if map? target/2 [
+                do-attributes node target/2
+            ]
+
+            do-attributes node attributes
+
+            node/3: copy/deep target/3
+
+            node
+        ]
+
+        make-stylesheet: func [
+            target [file! url! string! block!]
+            /embed
+        ][
+            target: compose [
+                (target)
+            ]
+
+            compose/deep [
+                style #[type "text/css"] [
+                    'text _ (
+                        rejoin collect-each part target [
+                            keep newline
+
+                            switch type-of part [
+                                #(string!) [
+                                    keep trim/auto trim/tail copy part
+                                ]
+
+                                #(file!)
+                                #(url!) [
+                                    keep either embed [
+                                        read/string part
+                                    ][
+                                        rejoin [
+                                            {@import url('} part {');}
+                                        ]
+                                    ]
+                                ]
+                            ]
+                        ]
+                    )
+                ]
+            ]
+        ]
+
+        make-linear-gradient: func [
             id [issue!]
             spec [block!]
 
-            /local node type center angle length
+            /local node type absolute? center angle length
         ][
             type: _
+            absolute?: _
 
             node: compose/deep [
                 linearGradient #[
@@ -3008,18 +3586,18 @@ svg: make object! [
                 start: func [
                     point [pair!]
                 ][
-                    either type = 'tilted [
-                        do make error! "Cannot START tilting linear gradient"
+                    either type = 'tilt [
+                        do make error! "START not valid for TILTED linear gradient"
                     ][
                         type: 'boxed
                     ]
 
                     if not zero? point/x [
-                        put node/2 'x1 to percent! point/x / 100
+                        put node/2 'x1 point/x
                     ]
 
                     if not zero? point/y [
-                        put node/2 'y1 to percent! point/y / 100
+                        put node/2 'y1 point/y
                     ]
 
                     point
@@ -3028,34 +3606,36 @@ svg: make object! [
                 end: func [
                     point [pair!]
                 ][
-                    either type = 'tilted [
-                        do make error! "Cannot END tilting linear gradient"
+                    either type = 'tilt [
+                        do make error! "END not valid for TILTED linear gradient"
                     ][
                         type: 'boxed
                     ]
 
-                    if 1 <> point/x [
-                        put node/2 'x2 to percent! point/x / 100
-                    ]
+                    put node/2 'x2 point/x
 
                     if not zero? point/y [
-                        put node/2 'y2 to percent! point/y / 100
+                        put node/2 'y2 point/y
                     ]
 
                     point
                 ]
 
+                relative: func [] [
+                    absolute?: no
+                ]
+
                 ; LINEAR-GRADIENT by center, angle, length
+                ;
                 tilt: func [] [
                     either none? type [
-                        type: 'tilted
+                        type: 'tilt
                     ][
-                        do make error! "Cannot TILT boxed linear gradient"
+                        do make error! "TILT not valid for BOXED linear gradient"
                     ]
 
                     angle: 90
                     length: 100
-                    center: 50x50
 
                     yes
                 ]
@@ -3063,7 +3643,7 @@ svg: make object! [
                 center: func [
                     value [pair!]
                 ][
-                    if type <> 'tilted [
+                    if 'tilt <> type [
                         do make error! "CENTER not valid for BOXED linear gradient"
                     ]
 
@@ -3073,7 +3653,7 @@ svg: make object! [
                 angle: func [
                     value [integer!]
                 ][
-                    if type <> 'tilted [
+                    if 'tilt <> type [
                         do make error! "ANGLE not valid for BOXED linear gradient"
                     ]
 
@@ -3083,18 +3663,18 @@ svg: make object! [
                 length: func [
                     value [number!]
                 ][
-                    if type <> 'tilted [
+                    if 'tilt <> type [
                         do make error! "LENGTH not valid for BOXED linear gradient"
                     ]
 
-                    length: either percent? value [
-                        100 * value
-                    ][
-                        value
-                    ]
+                    length: value
                 ]
 
                 user-space-on-use: func [] [
+                    if none? absolute? [
+                        absolute?: yes
+                    ]
+
                     put node/2 'gradientUnits 'userSpaceOnUse
                 ]
 
@@ -3124,17 +3704,27 @@ svg: make object! [
                     opacity [number! none!]
                     color [tuple! word! issue! none!]
                 ][
-                    add-stop node offset opacity color
+                    append-node node make-stop offset opacity color
                 ]
 
                 colors: func [
                     colors [block!]
                 ][
-                    add-stops node colors
+                    append-node node make-stops colors
                 ]
             ]
 
-            if 'tilted = type [
+            if 'tilt = type [
+                center: case [
+                    center :center
+
+                    absolute? [
+                        as-pair container/2/width / 2 0
+                    ]
+
+                    #else 50x50
+                ]
+
                 length: tilt center angle length
 
                 put node/2 'x1 length/1/x
@@ -3143,17 +3733,25 @@ svg: make object! [
                 put node/2 'y2 length/2/y
             ]
 
-            append-node document/3 node
-            ; document/3 = <defs>
+            if not absolute? [
+                for-each attribute [x1 y1 x2 y2] [
+                    if find node/2 attribute [
+                        put node/2 attribute to percent! node/2/:attribute / 100
+                    ]
+                ]
+            ]
+
+            node
         ]
 
-        add-radial-gradient: func [
-            document [block!]
+        make-radial-gradient: func [
             id [issue!]
             stops [block!]
 
-            /local node
+            /local node absolute?
         ][
+            absolute?: _
+
             node: compose/deep [
                 radialGradient #[
                     id (to string! id)
@@ -3164,13 +3762,8 @@ svg: make object! [
                 center: func [
                     point [pair!]
                 ][
-                    if 50 <> point/x [
-                        put node/2 'cx to percent! point/x / 100
-                    ]
-
-                    if 50 <> point/y [
-                        put node/2 'cy to percent! point/y / 100
-                    ]
+                    put node/2 'cx point/x
+                    put node/2 'cy point/y
 
                     point
                 ]
@@ -3178,11 +3771,7 @@ svg: make object! [
                 radius: func [
                     length [number!]
                 ][
-                    if not percent? length [
-                        length: to percent! length / 100
-                    ]
-
-                    if length <> 50% [
+                    if length <> .5 [
                         put node/2 'r length
                     ]
 
@@ -3212,7 +3801,15 @@ svg: make object! [
                     node
                 ]
 
+                relative: func [] [
+                    absolute?: no
+                ]
+
                 user-space-on-use: func [] [
+                    if none? absolute? [
+                        absolute?: yes
+                    ]
+
                     put node/2 'gradientUnits 'userSpaceOnUse
                 ]
 
@@ -3239,47 +3836,63 @@ svg: make object! [
                     opacity [number! none!]
                     color [tuple! word! issue! none!]
                 ][
-                    add-stop node offset opacity color
+                    append-node node make-stop offset opacity color
                 ]
 
                 colors: func [
                     colors [block!]
                 ][
-                    add-stops node colors
+                    append-node node make-stops colors
                 ]
             ]
 
-            append-node document/3 node
-            ; document/3 = <defs>
+            if not absolute? [
+                for-each [
+                    attribute default
+                ][
+                    cx 50%
+                    cy 50%
+                    r 50%
+                    fx 50%
+                    fy 50%
+                    fr 0%
+                ][
+                    if find node/2 attribute [
+                        if not percent? node/2/:attribute [
+                            put node/2 attribute to percent! node/2/:attribute / 100
+                        ]
+
+                        if default = node/2/:attribute [
+                            remove/key node/2 attribute
+                        ]
+                    ]
+                ]
+            ]
+
+            node
         ]
 
-        add-stop: func [
-            gradient [block!]
+        make-stop: func [
             offset [number! none!]
             opacity [number! none!]
             color [tuple! word! issue! none!]
         ][
-            append-node gradient compose/deep [
+            compose/deep [
                 stop #[
-                    offset (
-                        if offset [
-                            mold offset
-                        ]
-                    )
+                    offset: (offset)
 
-                    stop-opacity (
+                    stop-opacity: (
                         if opacity [
                             to decimal! opacity
                         ]
                     )
 
-                    stop-color (to-color color)
+                    stop-color: (color)
                 ] _
             ]
         ]
 
-        add-stops: func [
-            gradient [block!]
+        make-stops: func [
             colors [block!]
 
             /local offset end interval
@@ -3293,79 +3906,443 @@ svg: make object! [
 
             interval: to percent! divide end - offset -1 + length-of colors
 
-            append-node gradient collect-each color colors [
+            collect-each color colors [
                 keep compose/deep [
                     stop #[
                         offset (round/to offset 0.01%)
-                        stop-color (to-color color)
+                        stop-color (color)
                     ] _
                 ]
 
                 offset: offset + interval
             ]
-
-            gradient
         ]
 
-        animate-attribute: func [
-            container [block!]
-            attribute [word!]
-            duration [time! integer! decimal!]
-            values [block!]
+        make-filter: func [
+            id [issue!]
+            margin [pair! none!]
+            filters [block!]
 
-            /local node
+            /local node absolute?
         ][
-            if not find container/2 attribute [
-                put container/2 attribute first values
-            ]
+            absolute?: _
 
             node: compose/deep [
-                animate #[
-                    attributeName (attribute)
-                    values (combine/with values ";")
-                    dur (duration)
-                    repeatCount "indefinite"
-                ] _
+                filter #[
+                    id: (to string! id)
+                    x: (if margin [to percent! 0 - margin/x / 100])
+                    y: (if margin [to percent! 0 - margin/y / 100])
+                    width: (if margin [to percent! margin/x / 50 + 100%])
+                    height: (if margin [to percent! margin/y / 50 + 100%])
+                ] []
             ]
 
-            append-node container node
-        ]
+            do-with filters [
+                source: @SourceGraphic
+                alpha: @SourceAlpha
 
-        animate: func [
-            node [block!]
-            spec [block!]
-        ][
-            if not block? node/3 [
-                node/3: make block! 0
-            ]
-
-            do-with spec [
-                animate: func [
-                    attribute [word!]
-                    duration [time! integer! decimal!]
-                    values [block!]
+                with: func [
+                    name [ref!]
+                    node [block!]
                 ][
-                    creator/animate-attribute node attribute duration values
+                    assert [
+                        parse node [
+                            word! map! [block! | none!]
+                        ]
+                    ]
+
+                    node/2/in: name
+
+                    node
+                ]
+
+                set: func [
+                    name [ref!]
+                    node [block!]
+                ][
+                    assert [
+                        parse node [
+                            word! map! [block! | none!]
+                        ]
+                    ]
+
+                    node/2/result: name
+
+                    node
+                ]
+
+                place: func [
+                    filter [block!]
+                ][
+                    assert [
+                        parse filter [
+                            some [word! [none! | map!] [none! | block!]]
+                        ]
+                    ]
+
+                    append-node node filter
+                ]
+
+                offset: func [
+                    value [pair!]
+                ][
+                    append-node node compose/deep [
+                        feOffset #[
+                            in: _
+                            result: _
+                            dx: (value/x)
+                            dy: (value/y)
+                        ] _
+                    ]
+                ]
+
+                flood: func [
+                    color [word! tuple! issue!]
+                    /opacity
+                    value [integer! percent! decimal!]
+                ][
+                    append-node node compose/deep [
+                        feFlood #[
+                            in: _
+                            result: _
+                            flood-color: (color)
+                            flood-opacity: (value)
+                        ] _
+                    ]
+                ]
+
+                turbulence: func [
+                    frequency [decimal!]
+                    octaves [integer!]
+                    /noise
+                ][
+                    append-node node compose/deep [
+                        feTurbulence #[
+                            in: _
+                            result: _
+                            type: (either noise ["fractalNoise"] ["turbulence"])
+                            baseFrequency: (frequency)
+                            numOctaves: (octaves)
+                        ] _
+                    ]
+                ]
+
+                displacement-map: func [
+                    input [ref!]
+                    scale [number!]
+                    x-channel [char! none!]
+                    y-channel [char! none!]
+                ][
+                    append-node node compose/deep [
+                        feDisplacementMap #[
+                            in: _
+                            in2: (input)
+                            result: _
+                            scale: (scale)
+                            xChannelSelector: (x-channel)
+                            yChannelSelector: (y-channel)
+                        ] _
+                    ]
+                ]
+
+                blur: func [
+                    value [integer! decimal!]
+                ][
+                    append-node node compose/deep [
+                        feGaussianBlur #[
+                            in: _
+                            result: _
+                            stdDeviation: (value)
+                        ] _
+                    ]
+                ]
+
+                drop-shadow: func [
+                    value [integer! decimal!]
+                    offset [pair!]
+                    color [word! issue! tuple! none!]
+                    opacity [integer! decimal! percent! none!]
+                ][
+                    append-node node compose/deep [
+                        feDropShadow #[
+                            in: _
+                            result: _
+                            stdDeviation: (value)
+                            dx: (offset/x)
+                            dy: (offset/y)
+                            flood-color: (color)
+                            flood-opacity: (opacity)
+                        ] _
+                    ]
+                ]
+
+                blend: func [
+                    input [ref!]
+                    mode [word!]
+                ][
+                    assert [
+                        find [
+                            normal darken multiply color-burn lighten screen
+                            color-dodge overlay soft-light hard-light difference
+                            exclusion hue saturation color luminosity
+                        ] mode
+                    ]
+
+                    append-node node compose/deep [
+                        feBlendMode #[
+                            in: _
+                            in2: (input)
+                            result: _
+                            mode: (mode)
+                        ] _
+                    ]
+                ]
+
+                composite: func [
+                    input [ref!]
+                    operator [word!]
+                    /with options [map!]
+                ][
+                    assert [
+                        find [
+                            over in out atop xor lighter arithmetic
+                        ] operator
+                    ]
+
+                    append-node node compose/deep [
+                        feComposite #[
+                            in: _
+                            in2: (input)
+                            result: _
+                            operator: (operator)
+                        ] _
+                    ]
+                ]
+
+                merge: func [
+                    input [block!]
+                ][
+                    input: reduce input
+
+                    assert [
+                        parse input [
+                            some ref!
+                        ]
+                    ]
+
+                    append-node node compose/deep [
+                        feMerge #[
+                            result: _
+                        ][
+                            (
+                                collect-each ref input [
+                                    keep compose/deep [
+                                        feMergeNode #[
+                                            in: (ref)
+                                        ] _
+                                    ]
+                                ]
+                            )
+                        ]
+                    ]
                 ]
             ]
 
             node
         ]
 
-        create: func [
+        animate-attribute: func [
+            target [block!]
+            attribute [word!]
+            duration [time! integer! decimal!]
+            values [block!]
+        ][
+            if not find target/2 attribute [
+                ; put target/2 attribute ""
+                put target/2 attribute first values
+            ]
+
+            compose/deep [
+                animate #[
+                    attributeName (attribute)
+                    values (values)
+                    dur (duration)
+                    repeatCount "indefinite"
+                ] _
+            ]
+        ]
+
+        animate-transform: func [
+            target [block!]
+            type [word!]
+            duration [time! integer! decimal!]
+            values [block!]
+        ][
+            compose/deep [
+                animateTransform #[
+                    attributeName: transform
+                    type: (type)
+                    values: (values)
+                    dur: (duration)
+                    repeatCount: "indefinite"
+                    additive: "sum"
+                ] _
+            ]
+        ]
+
+        animate-keyframes-for: func [
+            target [block!]
+            attribute [word!]
+            duration [time! integer! decimal!]
+            spec [block!]
+            /local node transform? calc-mode count
+        ][
+            transform?: did find [rotate scale skewX skewY translate] attribute
+
+            node: compose/deep [
+                (pick [animateTransform animate] transform?) #[
+                    attributeName: (either transform? ['transform] [attribute])
+                    type: (if transform? [attribute])
+                    begin: _
+                    dur: (duration)
+                    end: _
+                    repeatCount: indefinite
+                    values: []
+                    keyTimes: []
+                ] _
+            ]
+
+            do-with spec [
+                splines: func [
+                    spec [block!]
+                ][
+                    if not none? :calc-mode [
+                        do make error! "Calc Mode already set"
+                    ]
+
+                    calc-mode: 'spline
+
+                    node/2/calcMode: calc-mode
+                    node/2/keySplines: spec
+                ]
+
+                begin: func [
+                    mark [number! time!]
+                ][
+                    node/2/begin: mark
+                ]
+
+                at: func [
+                    time [number!]
+                    value
+                ][
+                    if percent? time [
+                        time: to decimal! time
+                    ]
+
+                    append node/2/keyTimes time
+                    append/only node/2/values value
+
+                    time
+                ]
+            ]
+
+            if 'spline = calc-mode [
+                node/2/keySplines: collect [
+                    loop -1 + length-of node/2/values [
+                        keep/only node/2/keySplines
+                    ]
+                ]
+            ]
+
+            node
+        ]
+
+        animate: func [
+            node [block!]
+            spec [block!]
+            /local child additive
+        ][
+            if not block? node/3 [
+                node/3: make block! 0
+            ]
+
+            additive: 'replace
+
+            do-with spec [
+                values: func [
+                    attribute [word!]
+                    duration [time! integer! decimal!]
+                    values [block!]
+                ][
+                    either find [translate rotate] attribute [
+                        append-node node animate-transform node attribute duration values
+                    ][
+                        append-node node animate-attribute node attribute duration values
+                    ]
+                ]
+
+                keyframes-for: func [
+                    attribute [word!]
+                    duration [time! integer! decimal!]
+                    spec [block!]
+                ][
+                    child: append-node node animate-keyframes-for node attribute duration spec
+
+                    if 'animateTransform = child/1 [
+                        child/2/additive: additive
+                        additive: 'sum
+                        ; initial 'replace resets the child node's transform list,
+                        ; accumulate thereafter
+                    ]
+
+                    child
+                ]
+            ]
+
+            node
+        ]
+
+        new: func [
             size [pair!]
             body [block!]
             /with
             attributes [map!]
-            /local document
+            /mm
+            /pt
+
+            /local project width height
         ][
-            document: compose/deep [
+            project: copy #[
+                document: _
+                cursor: _
+                states: _
+            ]
+
+            case [
+                pt [
+                    width: join to integer! size/x "pt"
+                    height: join to integer! size/y "pt"
+                ]
+
+                mm [
+                    width: join to integer! size/x "mm"
+                    height: join to integer! size/y "mm"
+                ]
+
+                #else [
+                    width: to integer! size/x
+                    height: to integer! size/y
+                ]
+            ]
+
+            project/document: compose/deep [
                 svg #[
-                    xmlns http://www.w3.org/2000/svg
-                    version 1.1
-                    width (to integer! size/x)
-                    height (to integer! size/y)
-                    viewBox [
+                    xmlns: http://www.w3.org/2000/svg
+                    version: 1.1
+                    width: (width)
+                    height: (height)
+                    viewBox: [
                         0 0 (to integer! size/x) (to integer! size/y)
                     ]
                 ][
@@ -3373,17 +4350,76 @@ svg: make object! [
                 ]
             ]
 
-            creator/do-attributes document attributes
+            project/defs: project/document/3/3
+            project/here: tail project/document/3
+
+            do-attributes project/document attributes
+
+            project
+        ]
+
+        create: func [
+            size [pair!]
+            body [block!]
+            /with
+            attributes [map!]
+            /mm
+            /pt
+            /local project
+        ][
+            project: new/:with/:mm/:pt size body attributes
 
             do-with body [
-                document: copy document
+                size: as-pair size/x size/y
+
+                document: copy project/document
+
+                comment: func [
+                    text [string!]
+                ][
+                    append-to project compose/deep [
+                        'comment _ (text)
+                    ]
+                ]
+
+                stash: func [
+                    id [issue!]
+                    spec [block!]
+                ][
+                    append-defs project make-group project #[id: (id)] spec
+                ]
+
+                symbol: func [
+                    id [issue!]
+                    size [pair!]
+                    spec [block!]
+                    /at
+                    offset [pair!]
+                ][
+                    append-defs project make-symbol/:at project id size spec offset
+                ]
+
+                group: func [
+                    attributes [map! none!]
+                    spec [block!]
+                ][
+                    append-to project make-group project attributes spec
+                ]
+
+                anchor: func [
+                    target [file! url! issue!]
+                    attributes [map! none!]
+                    spec [block!]
+                ][
+                    append-to project make-anchor project target attributes spec
+                ]
 
                 line: func [
                     attributes [map! none!]
                     from [pair!]
                     to [pair!]
                 ][
-                    creator/add-path document attributes [
+                    append-to project make-path attributes [
                         move from
                         line to - from
                     ]
@@ -3391,9 +4427,9 @@ svg: make object! [
 
                 path: func [
                     attributes [map! none!]
-                    commands [block!]
+                    commands [block! string!]
                 ][
-                    creator/add-path document attributes commands
+                    append-to project make-path attributes commands 
                 ]
 
                 rectangle: func [
@@ -3403,7 +4439,7 @@ svg: make object! [
                     /rounded
                     radius [number! pair! block!]
                 ][
-                    creator/add-rectangle/:rounded document attributes offset size radius
+                    append-to project make-rectangle/:rounded attributes offset size radius
                 ]
 
                 circle: func [
@@ -3411,7 +4447,7 @@ svg: make object! [
                     center [pair!]
                     radius [number!]
                 ][
-                    creator/add-circle document attributes center radius
+                    append-to project make-circle attributes center radius
                 ]
 
                 ellipse: func [
@@ -3419,46 +4455,85 @@ svg: make object! [
                     center [pair!]
                     radius [pair!]
                 ][
-                    creator/add-ellipse document attributes center radius
+                    append-to project make-ellipse attributes center radius
                 ]
 
                 polygon: func [
                     attributes [map! none!]
                     points [block!]
                 ][
-                    creator/add-polygon document attributes points
+                    append-to project make-polygon attributes points
+                ]
+
+                text: func [
+                    attributes [map! none!]
+                    spec [block!]
+                ][
+                    append-to project make-text attributes spec
+                ]
+
+                use: func [
+                    id [issue!]
+                    offset [pair! none!]
+                    attributes [map! none!]
+                    /resize
+                    size [pair!]
+                ][
+                    append-to project make-use/:resize id offset attributes size
+                ]
+
+                place: func [
+                    node [block!]
+                    attributes [map! none!]
+                ][
+                    append-to project prep-for-placement attributes node
                 ]
 
                 linear-gradient: func [
                     id [issue!]
                     spec [block!]
                 ][
-                    creator/add-linear-gradient document id spec
+                    append-defs project make-linear-gradient id spec
                 ]
 
                 radial-gradient: func [
                     id [issue!]
                     spec [block!]
                 ][
-                    creator/add-radial-gradient document id spec
+                    append-defs project make-radial-gradient id spec
+                ]
+
+                filter: func [
+                    id [issue!]
+                    margin [pair! none!]
+                    spec [block!]
+                ][
+                    append-defs project make-filter id margin spec
                 ]
 
                 animate: func [
                     node [block!]
                     spec [block!]
                 ][
-                    creator/animate node spec
+                    animate node spec
+                ]
+
+                stylesheet: func [
+                    target [string! file! url! block!]
+                    /embed
+                ][
+                    append-defs project make-stylesheet/:embed target
                 ]
             ]
 
-            neaten/triplets document/3
+            neaten/triplets project/document/3
 
-            if empty? document/3/3 [
-                remove/part document/3 3
+            if empty? project/document/3/3 [
+                remove/part project/document/3 3
                 ; remove DEFS if empty
             ]
 
-            document
+            project/document
         ]
     ]
 
@@ -3497,7 +4572,7 @@ svg: make object! [
     encoder: context [
         render-node: func [
             name [word! lit-word!]
-            attributes [map! none!]
+            attrs [map! none!]
             kids [block! string! none!]
             encoding [map!]
 
@@ -3505,13 +4580,13 @@ svg: make object! [
         ][
             assert [
                 find/match keys-of encoding [
-                    value parents precision pretty?
+                    value parents precision pretty? hex-colors?
                 ]
             ]
 
             mark: encoding/value
 
-            either find/case ['text] :name [
+            either find/case ['text 'comment] :name [
                 if not string? kids [
                     do make error! rejoin [
                         "Error in SVG Object: "
@@ -3521,7 +4596,21 @@ svg: make object! [
                     ]
                 ]
 
-                append encoding/value sanitize kids
+                switch name [
+                    'text [
+                        append encoding/value sanitize kids
+                    ]
+
+                    'comment [
+                        append encoding/value rejoin [
+                            "^/<!--"
+                            either find spacers* first kids [""] [#" "]
+                            kids
+                            either find spacers* last kids [""] [#" "]
+                            "-->"
+                        ]
+                    ]
+                ]
             ][
                 name: switch/default name [
                     group ['g]
@@ -3543,130 +4632,33 @@ svg: make object! [
                 append encoding/value build-tag collect [
                     keep name
 
-                    if map? attributes [
-                        foreach [attribute value] attributes [
+                    if map? attrs [
+                        for-each [attribute value] attrs [
                             if not none? value [
                                 keep attribute
 
-                                keep switch/default type-of value [
-                                    #(issue!) [
-                                        switch/default attribute [
-                                            id [
-                                                to string! value
-                                            ]
-
-                                            href [
-                                                mold value
-                                            ]
-                                        ][
-                                            either parse form value [
-                                                8 hex* | 6 hex* | 3 hex*
-                                            ][
-                                                paint/encode paint/from-hex value
-                                            ][
-                                                rejoin [
-                                                    "url(#" form value ")"
-                                                ]
-                                            ]
+                                keep either all [
+                                    find [animate animateTransform] name
+                                    find [values keySplines keyTimes] attribute
+                                    ; special case :(
+                                ][
+                                    case [
+                                        not block? value [
+                                            do make error! "Expected ANIMATION values block"
                                         ]
-                                    ]
 
-                                    #(decimal!) [
-                                        switch/default attribute [
-                                            x x1 x2
-                                            y y1 y2
-                                            cx cy
-                                            dx dy
-                                            r rx ry
-                                            fr fx fy
-                                            width height [
-                                                numbers/encode/precision value encoding/precision
-                                            ]
-
-                                            dur [
-                                                join numbers/encode value "s"
-                                            ]
-                                        ][
-                                            numbers/encode value
+                                        not word? attrs/attributeName [
+                                            do make error! "Expected ANIMATION attribute name"
                                         ]
-                                    ]
 
-                                    #(integer!) [
-                                        switch/default attribute [
-                                            dur [
-                                                join form value #"s"
-                                            ]
-                                        ][
-                                            form value
+                                        #else [
+                                            combine/with map-each part value [
+                                                attributes/encode/with attrs/attributeName part encoding
+                                            ] #";"
                                         ]
-                                    ]
-
-                                    #(tuple!) [
-                                        paint/encode value
-                                    ]
-
-                                    #(url!) [
-                                        case [
-                                            not find/match value "id:#" [
-                                                form value
-                                            ]
-
-                                            find [id] attribute [
-                                                form skip value 3
-                                            ]
-
-                                            #else [
-                                                rejoin [
-                                                    "url(" skip value 3 #")"
-                                                ]
-                                            ]
-                                        ]
-                                    ]
-
-                                    #(block!) [
-                                        ; path & transform attributes; others?
-
-                                        case [
-                                            all [
-                                                'path = name
-                                                'd = attribute
-                                            ][
-                                                paths/encode/precise value encoding/precision
-                                            ]
-
-                                            parse value [
-                                                some [
-                                                    word! [paren! | block!]
-                                                ]
-                                            ][
-                                                transforms/encode value
-                                            ]
-
-                                            all [
-                                                find [
-                                                    transform gradientTransform
-                                                ] attribute
-
-                                                parse value [
-                                                    word! some number!
-                                                ]
-                                            ][
-                                                transforms/encode reduce [
-                                                    value/1 to paren! next value
-                                                ]
-                                            ]
-
-                                            #else [
-                                                lists/encode/with-comma value
-                                            ]
-                                        ]
-                                    ]
-
-                                    #(time!) [
-                                        join numbers/encode to decimal! value #"s"
                                     ]
                                 ][
-                                    form value
+                                    attributes/encode/with attribute value encoding
                                 ]
                             ]
                         ]
@@ -3686,7 +4678,7 @@ svg: make object! [
                 ][
                     insert encoding/parents name
 
-                    foreach [name attributes kids] kids [
+                    for-each [name attributes kids] kids [
                         render-node :name attributes kids encoding
                     ]
 
@@ -3701,7 +4693,7 @@ svg: make object! [
                     remove encoding/parents
 
                     append encoding/value rejoin [
-                        "</" replace form name #"|" #":" ">"
+                        "</" replace form name #"|" #":" #">"
                     ]
                 ]
             ]
@@ -3724,21 +4716,26 @@ svg: make object! [
             /pretty
             "Use indents on the resultant XML output"
 
+            /full-colors
+            "Don't use hex notation for colors"
+
             /local encoding
         ][
             encoding: compose #[
-                value (make string! 1024)
+                value: (make string! 1024)
 
-                parents (copy [])
+                parents: (copy [])
 
-                precision (
+                precision: (
                     any [
                         precision
                         default-precision
                     ]
                 )
 
-                pretty? (did pretty)
+                pretty?: (did pretty)
+
+                hex-colors?: (not full-colors)
             ]
 
             either parse document [
