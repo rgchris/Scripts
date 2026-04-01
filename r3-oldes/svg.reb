@@ -4237,6 +4237,46 @@ svg: context [
                     ]
                 ]
 
+                convolve: func [
+                    size [integer! pair! none!]
+                    values [block!]
+                    /with
+                    options [map!]
+                    /wrap
+                    /alpha
+                ][
+                    assert [
+                        equal? length-of values switch type-of size [
+                            #(pair!) [
+                                to integer! size/x * size/y
+                            ]
+
+                            #(integer!) [
+                                size * size
+                            ]
+
+                            #(none!) [
+                                9
+                            ]
+                        ]
+                    ]
+
+                    append-node node compose/deep [
+                        feConvolveMatrix #[
+                            in: _
+                            result: _
+                            order: (size)
+                            edgeMode: (if wrap 'wrap)
+                            bias: (all [options options/bias])
+                            divisor: (all [options options/divisor])
+                            preserveAlpha: (if not alpha 'true)
+                            kernelMatrix: [
+                                (values)
+                            ]
+                        ] _
+                    ]
+                ]
+
                 merge: func [
                     input [block!]
                 ][
