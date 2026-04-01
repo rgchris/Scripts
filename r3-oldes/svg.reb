@@ -27,6 +27,9 @@ Rebol [
     ]
 
     History: [
+        0.5.1 27-Mar-2026
+        "Support for more filters"
+
         0.5.0 25-Mar-2026
         "Further formats reorganization; Some Filters, Text, and Animation improvements"
 
@@ -103,6 +106,9 @@ Rebol [
 
         https://stackoverflow.com/questions/5149301
         "Baking transforms"
+
+        https://blog.logrocket.com/complete-guide-using-css-filters-svgs/
+        "SVG Filters"
     ]
 ]
 
@@ -1803,7 +1809,7 @@ svg: context [
                     rejoin [
                         "rgba("
                         value/1 #"," value/2 #"," value/3 #","
-                        numbers/encode/with value/4 / 256 options
+                        numbers/encode/with value/4 / 100 options
                         #")"
                     ]
                 ]
@@ -2227,7 +2233,8 @@ svg: context [
                     ]
                 ]
 
-                transform [
+                transform
+                gradientTransform [
                     transforms/decode value
                 ]
 
@@ -2406,6 +2413,10 @@ svg: context [
                     ][
                         form value
                     ]
+                ]
+
+                #(file!) [
+                    join file:/// value
                 ]
 
                 #(block!) [
@@ -2748,7 +2759,11 @@ svg: context [
 
             here: project/here
             project/here: node/3
-            do spec
+
+            do-with spec [
+                symbol-size: size
+            ]
+
             project/here: here
             node
         ]
@@ -2843,28 +2858,6 @@ svg: context [
                     cy (center/y)
                     rx (radius/x)
                     ry (radius/y)
-                ] _
-            ]
-
-            do-attributes node attributes
-
-            node
-        ]
-
-        make-image: func [
-            attributes [map! none!]
-            target [url! file! issue!]
-            offset [pair!]
-            size [pair!]
-            /local node
-        ][
-            node: compose/deep [
-                image #[
-                    href (target)
-                    x (offset/x)
-                    y (offset/y)
-                    width (size/x)
-                    height (size/y)
                 ] _
             ]
 
@@ -3480,6 +3473,28 @@ svg: context [
             node
         ]
 
+        make-image: func [
+            attributes [map! none!]
+            offset [pair!]
+            size [pair!]
+            target [url! file! issue!]
+            /local node
+        ][
+            node: compose/deep [
+                image #[
+                    href (target)
+                    x (offset/x)
+                    y (offset/y)
+                    width (size/x)
+                    height (size/y)
+                ] _
+            ]
+
+            do-attributes node attributes
+
+            node
+        ]
+
         make-use: func [
             id [issue!]
             offset [pair! none!]
@@ -3699,7 +3714,7 @@ svg: context [
                     put node/2 'spreadMethod 'repeat
                 ]
 
-                stop: func [
+                add-stop: func [
                     offset [number! none!]
                     opacity [number! none!]
                     color [tuple! word! issue! none!]
@@ -3748,9 +3763,13 @@ svg: context [
             id [issue!]
             stops [block!]
 
-            /local node absolute?
+            /local node params
         ][
-            absolute?: _
+            params: compose/deep [
+                center: _
+                absolute?: _
+                elliptical?: _
+            ]
 
             node: compose/deep [
                 radialGradient #[
@@ -3762,10 +3781,12 @@ svg: context [
                 center: func [
                     point [pair!]
                 ][
-                    put node/2 'cx point/x
-                    put node/2 'cy point/y
-
-                    point
+                    params/center: point
+                    ;
+                    ; put node/2 'cx point/x
+                    ; put node/2 'cy point/y
+                    ;
+                    ; point
                 ]
 
                 radius: func [
@@ -3802,12 +3823,12 @@ svg: context [
                 ]
 
                 relative: func [] [
-                    absolute?: no
+                    params/absolute?: no
                 ]
 
                 user-space-on-use: func [] [
-                    if none? absolute? [
-                        absolute?: yes
+                    if none? params/absolute? [
+                        params/absolute?: yes
                     ]
 
                     put node/2 'gradientUnits 'userSpaceOnUse
@@ -3817,7 +3838,10 @@ svg: context [
                 ;     put node/2 'gradientUnits 'objectBoundingBox
                 ; ]
 
-                ; gradientTransform:  ; This attribute provides additional transformation to the gradient coordinate system. Value type: <transform-list>; Default value: identity transform; Animatable: yes
+                ; gradientTransform:
+                ; ; This attribute provides additional transformation to the
+                ; ; gradient coordinate system. Value type: <transform-list>;
+                ; ; Default value: identity transform; Animatable: yes
 
                 pad: func [] [
                     put node/2 'spreadMethod 'pad
@@ -3831,7 +3855,7 @@ svg: context [
                     put node/2 'spreadMethod 'repeat
                 ]
 
-                stop: func [
+                add-stop: func [
                     offset [number! none!]
                     opacity [number! none!]
                     color [tuple! word! issue! none!]
@@ -3846,7 +3870,16 @@ svg: context [
                 ]
             ]
 
-            if not absolute? [
+            either params/elliptical? [
+                
+            ][
+                if params/center [
+                    node/2/cx: params/center/x
+                    node/2/cy: params/center/y
+                ]
+            ]
+
+            if not params/absolute? [
                 for-each [
                     attribute default
                 ][
@@ -4012,9 +4045,11 @@ svg: context [
                 ]
 
                 turbulence: func [
-                    frequency [decimal!]
+                    frequency [integer! decimal!]
                     octaves [integer!]
+                    seed [string! none!]
                     /noise
+                    /stitch
                 ][
                     append-node node compose/deep [
                         feTurbulence #[
@@ -4023,11 +4058,83 @@ svg: context [
                             type: (either noise ["fractalNoise"] ["turbulence"])
                             baseFrequency: (frequency)
                             numOctaves: (octaves)
+                            seed: (seed)
+                            stitchTiles: (if stitch 'stitch)
                         ] _
                     ]
                 ]
 
-                displacement-map: func [
+                color-matrix: func [
+                    table [block!]
+                    /srgb
+                ][
+                    assert [
+                        parse table [
+                            20 number!
+                        ]
+                    ]
+
+                    append-node node compose/deep [
+                        feColorMatrix #[
+                            in: _
+                            result: _
+                            type: matrix
+                            values: [(table)]
+                            color-interpolation-filters: (if srgb "sRGB")
+                        ] _
+                    ]
+                ]
+
+                saturate: func [
+                    value [number!]
+                ][
+                    append-node node compose/deep [
+                        feColorMatrix #[
+                            in: _
+                            result: _
+                            type: saturate
+                            values (value)
+                        ] _
+                    ]
+                ]
+
+                luminance-to-alpha: func [] [
+                    append-node node compose/deep [
+                        feColorMatrix #[
+                            in: _
+                            result: _
+                            type: luminanceToAlpha
+                        ] _
+                    ]
+                ]
+
+                dilate: func [
+                    radius [number!]
+                ][
+                    append-node node compose/deep [
+                        feMorphology #[
+                            in: _
+                            result: _
+                            operator: dilate
+                            radius: (radius)
+                        ] _
+                    ]
+                ]
+
+                erode: func [
+                    radius [number!]
+                ][
+                    append-node node compose/deep [
+                        feMorphology #[
+                            in: _
+                            result: _
+                            operator: erode
+                            radius: (radius)
+                        ] _
+                    ]
+                ]
+
+                displace: func [
                     input [ref!]
                     scale [number!]
                     x-channel [char! none!]
@@ -4089,12 +4196,23 @@ svg: context [
                     ]
 
                     append-node node compose/deep [
-                        feBlendMode #[
+                        feBlend #[
                             in: _
                             in2: (input)
                             result: _
                             mode: (mode)
                         ] _
+                    ]
+                ]
+
+                import: func [
+                    image [ref! url! file!]
+                ][
+                    append-node node compose/deep [
+                        feImage #[
+                            result: _
+                            href: (image)
+                        ]
                     ]
                 ]
 
@@ -4371,6 +4489,7 @@ svg: context [
 
             do-with body [
                 size: as-pair size/x size/y
+                canvas-size: as-pair size/x size/y
 
                 document: copy project/document
 
@@ -4470,6 +4589,15 @@ svg: context [
                     spec [block!]
                 ][
                     append-to project make-text attributes spec
+                ]
+
+                image: func [
+                    attributes [map! none!]
+                    offset [pair!]
+                    size [pair!]
+                    target [file! url! issue!]
+                ][
+                    append-to project make-image attributes offset size target
                 ]
 
                 use: func [
