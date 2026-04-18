@@ -2,7 +2,7 @@ Rebol [
     Title: "SVG Tools"
     Author: "Christopher Ross-Gill"
     Date: 25-Mar-2026
-    Version: 0.5.0
+    Version: 0.5.2
     File: %svg.reb
 
     Purpose: {
@@ -27,6 +27,9 @@ Rebol [
     ]
 
     History: [
+        0.5.2 17-Apr-2026
+        "Support for clipping paths; remove obsolete 'wrap-shape"
+
         0.5.1 27-Mar-2026
         "Support for more filters"
 
@@ -222,6 +225,25 @@ svg: context [
         ]
     ]
 
+    protect/hide/words [
+        is-value-from
+        fail-if-not-end
+        fail-mark
+        url*
+        word*
+        number*
+        unsigned*
+        comma*
+        space*
+        url-safe*
+        lower-alpha*
+        hex*
+        digit*
+        spacers*
+        name*
+        default-precision
+    ]
+
     numbers: context [
         decode: func [
             encoded [string! integer! decimal!]
@@ -326,6 +348,42 @@ svg: context [
 
                     value
                 ]
+            ]
+        ]
+    ]
+
+    urls: context [
+        rule: [
+            (value: _)
+            "url"
+            #"("
+            any space*
+            [
+                #"#"
+                copy value word*
+                (value: to issue! value)
+                |
+                copy value url*
+                (value: to url! value)
+                |
+                fail
+            ]
+            any space*
+            #")"
+        ]
+
+        value: _
+
+        decode: func [
+            target [string!]
+        ][
+            if parse target [
+                any space*
+                rule
+                any space*
+                end
+            ][
+                value
             ]
         ]
     ]
@@ -1748,21 +1806,9 @@ svg: context [
                     ]
                 )
                 |
-                "url("
-                any space*
-                [
-                    #"#"
-                    copy value word*
-                    (value: to issue! value)
-                    |
-                    copy value url*
-                    (value: to url! value)
-                    |
-                    fail
-                ]
-                any space*
-                ")"
+                urls/rule
                 end
+                (value: urls/value)
             ][
                 switch type-of value [
                     #(tuple!) [
@@ -2139,6 +2185,10 @@ svg: context [
 
                 class [
                     classes/decode value
+                ]
+
+                clip-path [
+                    urls/decode value
                 ]
 
                 fill
@@ -2646,6 +2696,7 @@ svg: context [
             opacity _
             stroke-opacity _
             fill-opacity _
+            clip-path _
             id _
             href _
         ]
@@ -2727,8 +2778,33 @@ svg: context [
 
             here: project/here
             project/here: node/3
+
             do spec
+
             project/here: here
+
+            node
+        ]
+
+        make-clippath: func [
+            project [map!]
+            attributes [map! none!]
+            spec [block!]
+            /local here node
+        ][
+            node: compose/deep [
+                clipPath #[] []
+            ]
+
+            do-attributes node attributes
+
+            here: project/here
+            project/here: node/3
+
+            do spec
+
+            project/here: here
+
             node
         ]
 
@@ -4548,6 +4624,13 @@ svg: context [
                     append-defs project make-group project #[id: (id)] spec
                 ]
 
+                clip: func [
+                    id [issue!]
+                    spec [block!]
+                ][
+                    append-defs project make-clippath project #[id: (id)] spec
+                ]
+
                 symbol: func [
                     id [issue!]
                     size [pair!]
@@ -4706,36 +4789,6 @@ svg: context [
     ]
 
     create: :creator/create
-
-    wrap-shape: func [
-        size [pair!]
-        shape [string! tag!]
-        /window
-        top-left [pair!]
-        bottom-right [pair!]
-    ][
-        top-left: any [
-            top-left
-            0x0
-        ]
-
-        bottom-right: any [
-            bottom-right
-            size
-        ]
-
-        trim/auto rejoin [
-            {
-            <svg xmlns="http://www.w3.org/2000/svg" version="1.1" }
-            {width="} size/x {" }
-            {height="} size/y {" }
-            {viewBox="} reform [top-left/x top-left/y bottom-right/x bottom-right/y] {" }
-            {xmlns:xlink="http://www.w3.org/1999/xlink">
-                } shape {
-            </svg>
-            }
-        ]
-    ]
 
     encoder: context [
         render-node: func [
